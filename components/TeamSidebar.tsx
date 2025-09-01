@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Rider } from '../types';
 import { TEAM_SIZE, BUDGET } from '../constants';
-import { TrashIcon, WhatsappIcon } from './Icons';
+import { TrashIcon, WhatsappIcon, UserPlusIcon } from './Icons';
 
 interface TeamSidebarProps {
     team: Rider[];
@@ -9,6 +9,7 @@ interface TeamSidebarProps {
     remainingBudget: number;
     onRemoveRider: (rider: Rider) => void;
     onShare: () => void;
+    onAddToLeague: () => void;
 }
 
 const TeamMember: React.FC<{rider: Rider, onRemove: () => void}> = ({ rider, onRemove }) => (
@@ -25,7 +26,7 @@ const TeamMember: React.FC<{rider: Rider, onRemove: () => void}> = ({ rider, onR
     </div>
 );
 
-export const TeamSidebar: React.FC<TeamSidebarProps> = ({ team, teamTotalPrice, remainingBudget, onRemoveRider, onShare }) => {
+export const TeamSidebar: React.FC<TeamSidebarProps> = ({ team, teamTotalPrice, remainingBudget, onRemoveRider, onShare, onAddToLeague }) => {
     const isTeamComplete = team.length === TEAM_SIZE;
 
     return (
@@ -69,7 +70,15 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({ team, teamTotalPrice, 
                 )}
             </div>
             
-            <div className="border-t border-gray-700 pt-6">
+            <div className="border-t border-gray-700 pt-6 space-y-3">
+                 <button
+                    onClick={onAddToLeague}
+                    disabled={!isTeamComplete}
+                    className="w-full flex items-center justify-center bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    <UserPlusIcon className="w-6 h-6 mr-3" />
+                    Añadir a la Liga
+                </button>
                 <button
                     onClick={onShare}
                     disabled={!isTeamComplete}
@@ -78,7 +87,7 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({ team, teamTotalPrice, 
                     <WhatsappIcon className="w-6 h-6 mr-3" />
                     Compartir en WhatsApp
                 </button>
-                {!isTeamComplete && <p className="text-xs text-gray-400 text-center mt-2">Completa tu equipo de 5 pilotos para poder compartirlo.</p>}
+                {!isTeamComplete && <p className="text-xs text-gray-400 text-center mt-2">Completa tu equipo de 5 pilotos para habilitar las acciones.</p>}
             </div>
         </div>
     );

@@ -11,7 +11,7 @@ interface EditTeamModalProps {
 }
 
 export const EditTeamModal: React.FC<EditTeamModalProps> = ({ participant, riders, onSave, onClose }) => {
-    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set(participant.teamIds));
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set(participant.team_ids));
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {

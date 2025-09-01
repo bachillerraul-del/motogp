@@ -1,4 +1,3 @@
-
 export interface Rider {
     id: number;
     name: string;
@@ -14,6 +13,6 @@ export interface Rider {
 
 export interface Participant {
     id: number;
-    name: string;
-    teamIds: number[];
+    name:string;
+    team_ids: number[];
 }
