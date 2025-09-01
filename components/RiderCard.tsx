@@ -66,8 +66,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
                 </div>
                 {renderCondition(rider.condition)}
 
-                <div className="grid grid-cols-3 gap-4 my-4 text-center bg-gray-900/50 p-3 rounded-md">
-                    <StatItem label="Total Pts" value={rider.totalPoints} />
+                <div className="grid grid-cols-2 gap-4 my-4 text-center bg-gray-900/50 p-3 rounded-md">
                     <StatItem label="Podios" value={rider.totalPodiums} />
                     <div>
                          <span className="text-xs text-gray-400 uppercase tracking-wider">Últimas 3</span>

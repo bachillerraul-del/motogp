@@ -57,7 +57,15 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
         const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: $${teamPrice}m*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
         
         const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-        window.open(whatsappUrl, '_blank');
+        
+        // Use a more reliable method for mobile devices
+        const link = document.createElement('a');
+        link.href = whatsappUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const handleSaveAndShare = async () => {
@@ -141,37 +149,4 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                 >
                     <div>
                         <p className="font-bold text-lg">{team.length}/{TEAM_SIZE} Pilotos</p>
-                        <p className="text-sm text-gray-400">Restante: <span className="font-mono font-bold text-white">${remainingBudget.toFixed(2)}m</span></p>
-                    </div>
-                    <button className="bg-red-600 text-white font-bold py-2 px-4 rounded-lg pointer-events-none">
-                        Ver Mi Equipo
-                    </button>
-                </div>
-
-                {/* Sidebar Overlay/Modal */}
-                <div className={`fixed inset-0 z-30 transition-opacity duration-300 ${isMobileSidebarOpen ? 'bg-black/60' : 'bg-transparent pointer-events-none'}`} onClick={() => setIsMobileSidebarOpen(false)} aria-hidden={!isMobileSidebarOpen}>
-                    <div 
-                        className={`fixed bottom-0 left-0 right-0 z-40 transition-transform duration-300 ease-in-out ${isMobileSidebarOpen ? 'translate-y-0' : 'translate-y-full'}`}
-                        onClick={(e) => e.stopPropagation()}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label="Panel de Mi Equipo"
-                    >
-                        <div className="max-h-[85vh] overflow-y-auto rounded-t-2xl relative">
-                             <TeamSidebar 
-                                team={team}
-                                teamTotalPrice={teamTotalPrice}
-                                remainingBudget={remainingBudget}
-                                onRemoveRider={removeRiderFromTeam}
-                                onSaveAndShare={handleSaveAndShare}
-                             />
-                             <button onClick={() => setIsMobileSidebarOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white bg-gray-900/50 rounded-full p-1" aria-label="Cerrar panel de Mi Equipo">
-                               <CloseIcon className="w-6 h-6"/>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
+                        <p className="text-sm text-gray-400">Restante: <span className="font-mono font
