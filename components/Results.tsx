@@ -1,88 +1,123 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Rider, Participant } from '../types';
+import type { Rider, Participant, Round } from '../types';
 import { MOTOGP_RIDERS, TEAM_SIZE } from '../constants';
 import { supabase } from '../lib/supabaseClient';
-import { EditTeamModal } from './EditTeamModal';
-import { TrophyIcon, EditIcon, TrashIcon, PlusIcon, PencilIcon, CheckIcon } from './Icons';
+import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon, PlusIcon } from './Icons';
 
 interface ResultsProps {
     participants: Participant[];
+    rounds: Round[];
+    isAdmin: boolean;
     onUpdateParticipant: (participant: Participant) => Promise<void>;
     onDeleteParticipant: (participantId: number) => Promise<void>;
+    onAddRound: (roundName: string) => Promise<void>;
+    showToast: (message: string, type: 'success' | 'error') => void;
 }
 
-export const Results: React.FC<ResultsProps> = ({ participants, onUpdateParticipant, onDeleteParticipant }) => {
-    const [riderPoints, setRiderPoints] = useState<Record<number, number>>({});
-    const [newParticipantName, setNewParticipantName] = useState('');
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
+// AllRiderPoints structure: { roundId: { riderId: points } }
+type AllRiderPoints = Record<number, Record<number, number>>;
+
+export const Results: React.FC<ResultsProps> = ({ participants, rounds, isAdmin, onUpdateParticipant, onDeleteParticipant, onAddRound, showToast }) => {
+    const [allRiderPoints, setAllRiderPoints] = useState<AllRiderPoints>({});
     const [editingName, setEditingName] = useState<{ id: number; name: string } | null>(null);
+    const [newRoundName, setNewRoundName] = useState('');
+    
+    // ID of the round selected for editing points
+    const [selectedRoundForEditing, setSelectedRoundForEditing] = useState<number | null>(rounds.length > 0 ? rounds[rounds.length-1].id : null);
+    
+    // ID of the round for leaderboard view, or 'general' for total score
+    const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
+
+    useEffect(() => {
+        // If rounds are loaded, set the default selected round to the latest one
+        if (rounds.length > 0 && selectedRoundForEditing === null) {
+            setSelectedRoundForEditing(rounds[rounds.length - 1].id);
+        }
+    }, [rounds, selectedRoundForEditing]);
 
     useEffect(() => {
         const fetchRiderPoints = async () => {
             const { data, error } = await supabase
                 .from('rider_points')
-                .select('rider_id, points');
+                .select('round_id, rider_id, points');
             
             if (error) {
                 console.error('Error fetching rider points:', error);
             } else if (data) {
                 const pointsMap = data.reduce((acc, item) => {
-                    acc[item.rider_id] = item.points;
+                    if (!acc[item.round_id]) {
+                        acc[item.round_id] = {};
+                    }
+                    acc[item.round_id][item.rider_id] = item.points;
                     return acc;
-                }, {} as Record<number, number>);
-                setRiderPoints(pointsMap);
+                }, {} as AllRiderPoints);
+                setAllRiderPoints(pointsMap);
             }
         };
         fetchRiderPoints();
     }, []);
 
-    const handlePointChange = async (riderId: number, points: string) => {
-        const parsedPoints = points === '' ? 0 : parseInt(points, 10);
+    const handlePointChange = async (riderId: number, pointsStr: string) => {
+        if (selectedRoundForEditing === null) {
+            showToast('Por favor, selecciona una jornada para editar los puntos.', 'error');
+            return;
+        }
+
+        const parsedPoints = pointsStr === '' ? 0 : parseInt(pointsStr, 10);
         const finalPoints = isNaN(parsedPoints) ? 0 : parsedPoints;
         
-        setRiderPoints(prev => ({ ...prev, [riderId]: finalPoints }));
+        // Update local state for instant UI feedback
+        setAllRiderPoints(prev => ({
+            ...prev,
+            [selectedRoundForEditing]: {
+                ...prev[selectedRoundForEditing],
+                [riderId]: finalPoints,
+            }
+        }));
 
         const { error } = await supabase
             .from('rider_points')
-            .upsert({ rider_id: riderId, points: finalPoints });
+            .upsert({ round_id: selectedRoundForEditing, rider_id: riderId, points: finalPoints });
 
         if (error) {
             console.error('Error upserting rider points:', error);
-            // Optionally, show a toast message on error
+            showToast('Error al guardar los puntos.', 'error');
         }
     };
 
     const handleClearPoints = async () => {
-        setRiderPoints({});
-        const riderIds = MOTOGP_RIDERS.map(r => r.id);
-        const { error } = await supabase
-            .from('rider_points')
-            .delete()
-            .in('rider_id', riderIds);
-        if (error) {
-            console.error('Error clearing points:', error);
+        if (selectedRoundForEditing === null) {
+            showToast('Selecciona una jornada para limpiar sus puntos.', 'error');
+            return;
+        }
+        if (window.confirm(`¿Estás seguro de que quieres limpiar todos los puntos para la jornada seleccionada?`)) {
+            setAllRiderPoints(prev => ({ ...prev, [selectedRoundForEditing!]: {} }));
+            const { error } = await supabase
+                .from('rider_points')
+                .delete()
+                .eq('round_id', selectedRoundForEditing);
+            if (error) {
+                console.error('Error clearing points:', error);
+                showToast('Error al limpiar los puntos.', 'error');
+            } else {
+                 showToast('Puntos limpiados para la jornada.', 'success');
+            }
         }
     };
 
-    const handleAddParticipant = (e: React.FormEvent) => {
-        e.preventDefault();
-        // This is now handled by App.tsx through the "Add to League" button.
-        // This form could be re-purposed or removed if adding is only done from the builder.
-        // For now, let's keep it but it's disconnected from team creation.
-        if (newParticipantName.trim()) {
-            const newParticipant: Omit<Participant, 'id'> = {
-                name: newParticipantName.trim(),
-                team_ids: [],
-            };
-            // The logic to add this would need to be in App.tsx
-            console.warn("Adding participants from this form is not fully implemented with Supabase yet.");
-            setNewParticipantName('');
+    const handleAddNewRound = () => {
+        if (newRoundName.trim() === '') {
+            showToast('El nombre de la jornada no puede estar vacío.', 'error');
+            return;
         }
+        onAddRound(newRoundName.trim());
+        setNewRoundName('');
     };
     
     const handleDeleteParticipant = (participantId: number) => {
-        onDeleteParticipant(participantId);
+        if (window.confirm("¿Estás seguro de que quieres eliminar a este participante?")) {
+            onDeleteParticipant(participantId);
+        }
     };
 
     const handleSaveName = (participantId: number) => {
@@ -95,30 +130,20 @@ export const Results: React.FC<ResultsProps> = ({ participants, onUpdateParticip
     };
 
     const calculateScore = useCallback((team_ids: number[]): number => {
-        return team_ids.reduce((total, riderId) => total + (riderPoints[riderId] || 0), 0);
-    }, [riderPoints]);
+        if (leaderboardView === 'general') {
+            // Sum points from all rounds
+            return Object.values(allRiderPoints).reduce((totalScore, roundPoints) => {
+                return totalScore + team_ids.reduce((roundTotal, riderId) => roundTotal + (roundPoints[riderId] || 0), 0);
+            }, 0);
+        }
+        // Sum points for a specific round
+        const roundPoints = allRiderPoints[leaderboardView] || {};
+        return team_ids.reduce((total, riderId) => total + (roundPoints[riderId] || 0), 0);
+    }, [allRiderPoints, leaderboardView]);
 
     const sortedParticipants = useMemo(() => {
         return [...participants].sort((a, b) => calculateScore(b.team_ids) - calculateScore(a.team_ids));
     }, [participants, calculateScore]);
-
-    const handleOpenModal = (participant: Participant) => {
-        setEditingParticipant(participant);
-        setIsModalOpen(true);
-    };
-
-    const handleCloseModal = () => {
-        setIsModalOpen(false);
-        setEditingParticipant(null);
-    };
-
-    const handleSaveTeam = (participantId: number, teamIds: number[]) => {
-        const participantToUpdate = participants.find(p => p.id === participantId);
-        if (participantToUpdate) {
-            onUpdateParticipant({ ...participantToUpdate, team_ids: teamIds });
-        }
-        handleCloseModal();
-    };
 
     const ridersById = useMemo(() => 
         MOTOGP_RIDERS.reduce((acc, rider) => {
@@ -141,48 +166,84 @@ export const Results: React.FC<ResultsProps> = ({ participants, onUpdateParticip
         return 'border-l-4 border-transparent';
     };
 
+    const currentRiderPoints = allRiderPoints[selectedRoundForEditing!] || {};
 
     return (
         <div className="flex flex-col lg:flex-row gap-8">
-            {isModalOpen && editingParticipant && (
-                <EditTeamModal 
-                    participant={editingParticipant}
-                    riders={MOTOGP_RIDERS}
-                    onSave={handleSaveTeam}
-                    onClose={handleCloseModal}
-                />
-            )}
-
-            {/* Rider Points Input Area */}
-            <div className="w-full lg:w-1/3">
-                <div className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24">
-                    <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
-                        <h2 className="text-xl font-bold">Paso 1: Puntos</h2>
-                        <button onClick={handleClearPoints} className="text-sm text-gray-400 hover:text-red-500 transition-colors">Limpiar Puntos</button>
-                    </div>
-                    <div className="max-h-[60vh] overflow-y-auto pr-2">
-                        <div className="space-y-2">
-                            {MOTOGP_RIDERS.map(rider => (
-                                <div key={rider.id} className="flex items-center justify-between text-sm">
-                                    <label htmlFor={`rider-${rider.id}`} className="flex-grow mr-2 truncate">{rider.name}</label>
-                                    <input
-                                        id={`rider-${rider.id}`}
-                                        type="number"
-                                        value={riderPoints[rider.id] || ''}
-                                        onChange={(e) => handlePointChange(rider.id, e.target.value)}
-                                        className="w-20 bg-gray-900 text-white p-1 rounded-md text-right focus:outline-none focus:ring-2 focus:ring-red-500"
-                                        placeholder="0"
-                                    />
-                                </div>
-                            ))}
+            {/* Control Panel (Admin Only) */}
+            {isAdmin && (
+                <div className="w-full lg:w-1/3">
+                    <div className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
+                        
+                        {/* Round Creator */}
+                        <div>
+                            <h2 className="text-xl font-bold mb-2">Jornadas</h2>
+                            <div className="flex gap-2">
+                                 <input
+                                    type="text"
+                                    value={newRoundName}
+                                    onChange={(e) => setNewRoundName(e.target.value)}
+                                    placeholder="Nombre de la Jornada (ej. GP Qatar)"
+                                    className="flex-grow bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                                />
+                                <button onClick={handleAddNewRound} className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-md transition-colors"><PlusIcon className="w-6 h-6"/></button>
+                            </div>
                         </div>
+
+                        {/* Points Editor */}
+                        <div className="border-t border-gray-700 pt-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <h2 className="text-xl font-bold">Editar Puntos</h2>
+                                <button onClick={handleClearPoints} disabled={!selectedRoundForEditing} className="text-sm text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Limpiar Puntos</button>
+                            </div>
+                            <select
+                                value={selectedRoundForEditing ?? ''}
+                                onChange={(e) => setSelectedRoundForEditing(Number(e.target.value))}
+                                className="w-full bg-gray-900 text-white p-2 rounded-md mb-2"
+                                disabled={rounds.length === 0}
+                            >
+                                <option value="" disabled>{rounds.length === 0 ? 'Crea una jornada primero' : 'Selecciona jornada...'}</option>
+                                {rounds.map(round => <option key={round.id} value={round.id}>{round.name}</option>)}
+                            </select>
+                            <div className="max-h-[45vh] overflow-y-auto pr-2">
+                                <div className="space-y-2">
+                                    {MOTOGP_RIDERS.map(rider => (
+                                        <div key={rider.id} className="flex items-center justify-between text-sm">
+                                            <label htmlFor={`rider-${rider.id}`} className="flex-grow mr-2 truncate">{rider.name}</label>
+                                            <input
+                                                id={`rider-${rider.id}`}
+                                                type="number"
+                                                value={currentRiderPoints[rider.id] || ''}
+                                                onChange={(e) => handlePointChange(rider.id, e.target.value)}
+                                                className="w-20 bg-gray-900 text-white p-1 rounded-md text-right focus:outline-none focus:ring-2 focus:ring-red-500"
+                                                placeholder="0"
+                                                disabled={!selectedRoundForEditing}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
-            </div>
+            )}
 
             {/* Participants and Scores Area */}
             <div className="flex-grow">
-                <h2 className="text-2xl font-bold mb-4">Paso 2: Participantes de la Liga</h2>
+                 <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold">Clasificación de la Liga</h2>
+                    <select
+                        value={leaderboardView}
+                        onChange={e => setLeaderboardView(e.target.value === 'general' ? 'general' : Number(e.target.value))}
+                        className="bg-gray-800 text-white p-2 rounded-md"
+                    >
+                        <option value="general">Clasificación General</option>
+                        <optgroup label="Por Jornada">
+                            {rounds.map(round => <option key={round.id} value={round.id}>{round.name}</option>)}
+                        </optgroup>
+                    </select>
+                </div>
                 <div className="space-y-4">
                     {sortedParticipants.length === 0 && (
                         <div className="text-center py-10 bg-gray-800 rounded-lg">
@@ -214,13 +275,16 @@ export const Results: React.FC<ResultsProps> = ({ participants, onUpdateParticip
                                       <TrophyIcon className="w-5 h-5"/>
                                       <span>{calculateScore(participant.team_ids)} pts</span>
                                    </div>
-                                   {editingName?.id === participant.id ? (
-                                        <button onClick={() => handleSaveName(participant.id)} className="p-2 text-gray-400 hover:text-green-500 hover:bg-gray-700 rounded-full transition-colors"><CheckIcon className="w-5 h-5"/></button>
-                                   ) : (
-                                        <button onClick={() => setEditingName({ id: participant.id, name: participant.name })} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"><PencilIcon className="w-5 h-5"/></button>
+                                   {isAdmin && (
+                                       <>
+                                        {editingName?.id === participant.id ? (
+                                                <button onClick={() => handleSaveName(participant.id)} className="p-2 text-gray-400 hover:text-green-500 hover:bg-gray-700 rounded-full transition-colors"><CheckIcon className="w-5 h-5"/></button>
+                                        ) : (
+                                                <button onClick={() => setEditingName({ id: participant.id, name: participant.name })} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"><PencilIcon className="w-5 h-5"/></button>
+                                        )}
+                                        <button onClick={() => handleDeleteParticipant(participant.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-gray-700 rounded-full transition-colors"><TrashIcon className="w-5 h-5"/></button>
+                                       </>
                                    )}
-                                   <button onClick={() => handleOpenModal(participant)} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"><EditIcon className="w-5 h-5"/></button>
-                                   <button onClick={() => handleDeleteParticipant(participant.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-gray-700 rounded-full transition-colors"><TrashIcon className="w-5 h-5"/></button>
                                </div>
                            </div>
                            <div className="bg-gray-900/50 p-3 rounded-md">
@@ -230,7 +294,6 @@ export const Results: React.FC<ResultsProps> = ({ participants, onUpdateParticip
                                        {participant.team_ids.map(riderId => (
                                            <li key={riderId} className="bg-gray-700 p-1.5 rounded-md flex justify-between items-center">
                                                <span className="truncate">{ridersById[riderId]?.name ?? 'N/A'}</span>
-                                               <span className="font-mono text-xs ml-2 text-yellow-400">{riderPoints[riderId] || 0}</span>
                                            </li>
                                        ))}
                                    </ul>

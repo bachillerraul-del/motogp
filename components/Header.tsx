@@ -1,12 +1,15 @@
 import React from 'react';
-import { MotoIcon } from './Icons';
+import { MotoIcon, LoginIcon, LogoutIcon, ShieldCheckIcon } from './Icons';
 
 interface HeaderProps {
     currentView: 'builder' | 'results';
     setView: (view: 'builder' | 'results') => void;
+    isAdmin: boolean;
+    onAdminLogin: () => void;
+    onAdminLogout: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentView, setView }) => {
+export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, onAdminLogin, onAdminLogout }) => {
     
     const navButtonStyle = "px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200";
     const activeButtonStyle = "bg-red-600 text-white";
@@ -21,20 +24,40 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView }) => {
                         <span className="text-red-600">MotoGP</span> Fantasy
                     </h1>
                 </div>
-                <nav className="flex items-center space-x-2 md:space-x-4 bg-gray-900 p-1 rounded-lg">
-                    <button 
-                        onClick={() => setView('builder')}
-                        className={`${navButtonStyle} ${currentView === 'builder' ? activeButtonStyle : inactiveButtonStyle}`}
-                    >
-                        Crear Equipo
-                    </button>
-                    <button 
-                        onClick={() => setView('results')}
-                        className={`${navButtonStyle} ${currentView === 'results' ? activeButtonStyle : inactiveButtonStyle}`}
-                    >
-                        Calcular Resultados
-                    </button>
-                </nav>
+
+                <div className="flex items-center space-x-2 md:space-x-4">
+                    <nav className="flex items-center space-x-2 bg-gray-900 p-1 rounded-lg">
+                        <button 
+                            onClick={() => setView('builder')}
+                            className={`${navButtonStyle} ${currentView === 'builder' ? activeButtonStyle : inactiveButtonStyle}`}
+                        >
+                            Crear Equipo
+                        </button>
+                        <button 
+                            onClick={() => setView('results')}
+                            className={`${navButtonStyle} ${currentView === 'results' ? activeButtonStyle : inactiveButtonStyle}`}
+                        >
+                            Resultados
+                        </button>
+                    </nav>
+
+                    {isAdmin ? (
+                        <div className="flex items-center space-x-2 bg-gray-900 p-1 rounded-lg">
+                            <span className="flex items-center text-green-400 px-3 py-1.5 text-sm">
+                                <ShieldCheckIcon className="w-5 h-5 mr-2" />
+                                Modo Admin
+                            </span>
+                             <button onClick={onAdminLogout} className="text-gray-300 hover:bg-gray-700 hover:text-white p-2 rounded-md" aria-label="Cerrar sesión de administrador">
+                                <LogoutIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+                    ) : (
+                        <button onClick={onAdminLogin} className={`${inactiveButtonStyle} ${navButtonStyle} flex items-center`}>
+                            <LoginIcon className="w-5 h-5 mr-2" />
+                            Admin Login
+                        </button>
+                    )}
+                </div>
             </div>
         </header>
     );

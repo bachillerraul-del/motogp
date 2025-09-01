@@ -16,3 +16,8 @@ export interface Participant {
     name:string;
     team_ids: number[];
 }
+
+export interface Round {
+    id: number;
+    name: string;
+}

@@ -1,16 +1,18 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import type { Rider } from '../types';
+import type { Rider, Participant } from '../types';
 import { MOTOGP_RIDERS, TEAM_SIZE, BUDGET } from '../constants';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
 import { CloseIcon } from './Icons';
 
 interface TeamBuilderProps {
-    onAddToLeague: (name: string, team: Rider[]) => void;
+    participants: Participant[];
+    onAddToLeague: (name: string, team: Rider[]) => Promise<boolean>;
+    onUpdateTeam: (participantId: number, team: Rider[]) => Promise<boolean>;
     showToast: (message: string, type: 'success' | 'error') => void;
 }
 
-export const TeamBuilder: React.FC<TeamBuilderProps> = ({ onAddToLeague, showToast }) => {
+export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToLeague, onUpdateTeam, showToast }) => {
     const [team, setTeam] = useState<Rider[]>([]);
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -22,7 +24,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ onAddToLeague, showToa
 
     const addRiderToTeam = useCallback((rider: Rider) => {
         if (rider.condition?.includes('unavailable') || rider.condition?.includes('injured')) {
-            return; // Defensive check
+            return; 
         }
         if (team.length >= TEAM_SIZE) {
             showToast('Tu equipo ya está lleno. No puedes añadir más de 5 pilotos.', 'error');
@@ -38,12 +40,12 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ onAddToLeague, showToa
         }
         setTeam(prevTeam => [...prevTeam, rider]);
         showToast(`${rider.name} añadido al equipo.`, 'success');
-    }, [team, remainingBudget, showToast, setTeam]);
+    }, [team, remainingBudget, showToast]);
 
     const removeRiderFromTeam = useCallback((rider: Rider) => {
         setTeam(prevTeam => prevTeam.filter(r => r.id !== rider.id));
         showToast(`${rider.name} quitado del equipo.`, 'success');
-    }, [setTeam, showToast]);
+    }, [showToast]);
 
     const handleShare = () => {
         const riderList = team.map((r, index) => 
@@ -58,13 +60,31 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ onAddToLeague, showToa
         window.open(whatsappUrl, '_blank');
     };
 
-    const handleAddToLeague = () => {
-        const participantName = window.prompt("Introduce el nombre del participante para esta liga:");
-        if (participantName && participantName.trim() !== "") {
-            onAddToLeague(participantName.trim(), team);
-            setTeam([]); // Clear the current team after adding to the league
-        } else if (participantName !== null) { // User clicked OK but left it empty
-            showToast('El nombre del participante no puede estar vacío.', 'error');
+    const handleSaveAndShare = async () => {
+        const participantName = window.prompt("Introduce tu nombre de participante para la liga:");
+        if (!participantName || participantName.trim() === "") {
+            if (participantName !== null) { // User clicked OK but left it empty
+                showToast('El nombre del participante no puede estar vacío.', 'error');
+            }
+            return;
+        }
+
+        const trimmedName = participantName.trim();
+        const existingParticipant = participants.find(p => p.name.toLowerCase() === trimmedName.toLowerCase());
+
+        let success = false;
+        if (existingParticipant) {
+            const wantsToUpdate = window.confirm(`El participante '${trimmedName}' ya existe. ¿Deseas actualizar su equipo con tu selección actual?`);
+            if (wantsToUpdate) {
+                success = await onUpdateTeam(existingParticipant.id, team);
+            }
+        } else {
+            success = await onAddToLeague(trimmedName, team);
+        }
+
+        if (success) {
+            handleShare();
+            setTeam([]); 
         }
     };
     
@@ -103,8 +123,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ onAddToLeague, showToa
                         teamTotalPrice={teamTotalPrice}
                         remainingBudget={remainingBudget}
                         onRemoveRider={removeRiderFromTeam}
-                        onShare={handleShare}
-                        onAddToLeague={handleAddToLeague}
+                        onSaveAndShare={handleSaveAndShare}
                    />
                 </div>
             </aside>
@@ -144,8 +163,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ onAddToLeague, showToa
                                 teamTotalPrice={teamTotalPrice}
                                 remainingBudget={remainingBudget}
                                 onRemoveRider={removeRiderFromTeam}
-                                onShare={handleShare}
-                                onAddToLeague={handleAddToLeague}
+                                onSaveAndShare={handleSaveAndShare}
                              />
                              <button onClick={() => setIsMobileSidebarOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white bg-gray-900/50 rounded-full p-1" aria-label="Cerrar panel de Mi Equipo">
                                <CloseIcon className="w-6 h-6"/>

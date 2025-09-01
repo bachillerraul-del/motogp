@@ -1,15 +1,14 @@
 import React from 'react';
 import type { Rider } from '../types';
 import { TEAM_SIZE, BUDGET } from '../constants';
-import { TrashIcon, WhatsappIcon, UserPlusIcon } from './Icons';
+import { TrashIcon, WhatsappIcon } from './Icons';
 
 interface TeamSidebarProps {
     team: Rider[];
     teamTotalPrice: number;
     remainingBudget: number;
     onRemoveRider: (rider: Rider) => void;
-    onShare: () => void;
-    onAddToLeague: () => void;
+    onSaveAndShare: () => void;
 }
 
 const TeamMember: React.FC<{rider: Rider, onRemove: () => void}> = ({ rider, onRemove }) => (
@@ -26,7 +25,7 @@ const TeamMember: React.FC<{rider: Rider, onRemove: () => void}> = ({ rider, onR
     </div>
 );
 
-export const TeamSidebar: React.FC<TeamSidebarProps> = ({ team, teamTotalPrice, remainingBudget, onRemoveRider, onShare, onAddToLeague }) => {
+export const TeamSidebar: React.FC<TeamSidebarProps> = ({ team, teamTotalPrice, remainingBudget, onRemoveRider, onSaveAndShare }) => {
     const isTeamComplete = team.length === TEAM_SIZE;
 
     return (
@@ -72,22 +71,14 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({ team, teamTotalPrice, 
             
             <div className="border-t border-gray-700 pt-6 space-y-3">
                  <button
-                    onClick={onAddToLeague}
-                    disabled={!isTeamComplete}
-                    className="w-full flex items-center justify-center bg-red-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    <UserPlusIcon className="w-6 h-6 mr-3" />
-                    Añadir a la Liga
-                </button>
-                <button
-                    onClick={onShare}
+                    onClick={onSaveAndShare}
                     disabled={!isTeamComplete}
                     className="w-full flex items-center justify-center bg-green-500 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     <WhatsappIcon className="w-6 h-6 mr-3" />
-                    Compartir en WhatsApp
+                    Guardar y Compartir
                 </button>
-                {!isTeamComplete && <p className="text-xs text-gray-400 text-center mt-2">Completa tu equipo de 5 pilotos para habilitar las acciones.</p>}
+                {!isTeamComplete && <p className="text-xs text-gray-400 text-center mt-2">Completa tu equipo de 5 pilotos para habilitar la acción.</p>}
             </div>
         </div>
     );
