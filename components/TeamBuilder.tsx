@@ -54,7 +54,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
         
         const teamPrice = team.reduce((sum, rider) => sum + rider.price, 0).toFixed(2);
 
-        const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: $${teamPrice}m*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
+        const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: €${teamPrice}m*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
         
         const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
         
@@ -149,4 +149,53 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                 >
                     <div>
                         <p className="font-bold text-lg">{team.length}/{TEAM_SIZE} Pilotos</p>
-                        <p className="text-sm text-gray-400">Restante: <span className="font-mono font
+                        <p className="text-sm text-gray-400">Restante: 
+                            <span className={`font-mono font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>
+                                €{remainingBudget.toFixed(2)}m
+                            </span>
+                        </p>
+                    </div>
+                     <span className="text-white font-bold py-2 px-4 rounded-lg bg-red-600/50">Ver Equipo</span>
+                </div>
+
+                {/* Mobile Sidebar Panel */}
+                <div 
+                    className={`fixed inset-0 bg-black bg-opacity-50 z-30 transition-opacity duration-300 ${isMobileSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                    onClick={() => setIsMobileSidebarOpen(false)}
+                    aria-hidden={!isMobileSidebarOpen}
+                />
+                <div 
+                    className={`fixed top-0 right-0 bottom-0 w-full max-w-sm bg-gray-900 shadow-xl z-40 transform transition-transform duration-300 ease-in-out ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="mobile-sidebar-title"
+                >
+                    <div className="p-4 h-full flex flex-col">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 id="mobile-sidebar-title" className="text-xl font-bold text-white">Tu Selección</h2>
+                            <button 
+                                onClick={() => setIsMobileSidebarOpen(false)} 
+                                className="p-2 text-gray-400 hover:text-white"
+                                aria-label="Cerrar el panel del equipo"
+                            >
+                                <CloseIcon className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto flex-grow">
+                             <TeamSidebar 
+                                team={team}
+                                teamTotalPrice={teamTotalPrice}
+                                remainingBudget={remainingBudget}
+                                onRemoveRider={removeRiderFromTeam}
+                                onSaveAndShare={() => {
+                                    handleSaveAndShare();
+                                    setIsMobileSidebarOpen(false); // Close sidebar after action
+                                }}
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};

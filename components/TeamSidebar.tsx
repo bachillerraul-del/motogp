@@ -16,7 +16,7 @@ const TeamMember: React.FC<{rider: Rider, onRemove: () => void}> = ({ rider, onR
         <div className="flex items-center">
             <div>
                 <p className="font-semibold">{rider.name}</p>
-                <p className="text-xs text-gray-400">${rider.price.toFixed(2)}m - {rider.team}</p>
+                <p className="text-xs text-gray-400">€{rider.price.toFixed(2)}m - {rider.team}</p>
             </div>
         </div>
         <button onClick={onRemove} aria-label={`Quitar a ${rider.name}`} className="text-gray-400 hover:text-red-500 transition-colors duration-200 p-1">
@@ -41,17 +41,17 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({ team, teamTotalPrice, 
                  <h3 className="text-lg font-semibold text-center mb-3">Presupuesto</h3>
                  <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Inicial:</span>
-                    <span className="font-mono">${BUDGET.toFixed(2)}m</span>
+                    <span className="font-mono">€{BUDGET.toFixed(2)}m</span>
                 </div>
                 <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Coste Equipo:</span>
-                    <span className="font-mono font-semibold">${teamTotalPrice.toFixed(2)}m</span>
+                    <span className="font-mono font-semibold">€{teamTotalPrice.toFixed(2)}m</span>
                 </div>
                 <div className="bg-gray-900/50 p-2 rounded-md mt-2">
                     <div className="flex justify-between items-center">
                         <span className="text-gray-300 font-bold">Restante:</span>
                         <span className={`font-mono font-bold text-2xl ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>
-                            ${remainingBudget.toFixed(2)}m
+                            €{remainingBudget.toFixed(2)}m
                         </span>
                     </div>
                 </div>

@@ -10,7 +10,7 @@ interface RiderCardProps {
     isAffordable: boolean;
 }
 
-const formatPrice = (price: number): string => `$${price.toFixed(2)}m`;
+const formatPrice = (price: number): string => `€${price.toFixed(2)}m`;
 
 const formatPriceChange = (change: number): React.ReactNode => {
     if (change === 0) return null;
