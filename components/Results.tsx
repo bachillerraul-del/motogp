@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Rider, Participant, Round } from '../types';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import type { Rider, Participant, Round, TeamSnapshot, LeagueSettings } from '../types';
 import { MOTOGP_RIDERS } from '../constants';
 import { supabase } from '../lib/supabaseClient';
 import { Modal } from './Modal';
@@ -9,28 +9,59 @@ import { Leaderboard } from './Leaderboard';
 interface ResultsProps {
     participants: Participant[];
     rounds: Round[];
+    teamSnapshots: TeamSnapshot[];
+    leagueSettings: LeagueSettings | null;
     isAdmin: boolean;
     onUpdateParticipant: (participant: Participant) => Promise<void>;
     onDeleteParticipant: (participantId: number) => Promise<void>;
     onAddRound: (roundName: string) => Promise<void>;
+    onUpdateRound: (round: Round) => Promise<void>;
+    onUpdateMarketDeadline: (deadline: string | null) => Promise<void>;
     showToast: (message: string, type: 'success' | 'error') => void;
 }
 
 type AllRiderPoints = Record<number, Record<number, number>>;
 
-export const Results: React.FC<ResultsProps> = ({ participants, rounds, isAdmin, onUpdateParticipant, onDeleteParticipant, onAddRound, showToast }) => {
+const getTeamForRound = (participantId: number, roundDate: string | null, snapshots: TeamSnapshot[]): number[] => {
+    if (!roundDate) return [];
+    
+    const participantSnapshots = snapshots
+        .filter(s => s.participant_id === participantId && new Date(s.created_at) < new Date(roundDate))
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        
+    return participantSnapshots.length > 0 ? participantSnapshots[0].team_ids : [];
+};
+
+export const Results: React.FC<ResultsProps> = (props) => {
+    const { 
+        participants, rounds, teamSnapshots, leagueSettings, isAdmin, 
+        onUpdateParticipant, onDeleteParticipant, onAddRound, onUpdateRound, onUpdateMarketDeadline, 
+        showToast 
+    } = props;
+    
     const [allRiderPoints, setAllRiderPoints] = useState<AllRiderPoints>({});
-    const [selectedRoundForEditing, setSelectedRoundForEditing] = useState<number | null>(null);
+    const [selectedRoundForEditing, setSelectedRoundForEditing] = useState<Round | null>(null);
     const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
+    const defaultViewIsSet = useRef(false);
     
     // Modal States
     const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
     const [isConfirmingClearPoints, setIsConfirmingClearPoints] = useState(false);
 
     useEffect(() => {
-        if (rounds.length > 0 && selectedRoundForEditing === null) {
-            const latestRound = rounds.reduce((latest, current) => new Date(latest.created_at) > new Date(current.created_at) ? latest : current);
-            setSelectedRoundForEditing(latestRound.id);
+        // This effect sets the default view to the latest round *only once* when rounds are available.
+        // It won't override the user's selection later.
+        if (rounds.length > 0 && !defaultViewIsSet.current) {
+            const latestRound = [...rounds].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+            
+            setLeaderboardView(latestRound.id);
+            
+            // Also set the default round for the admin panel if it's not already set
+            if (!selectedRoundForEditing) {
+                setSelectedRoundForEditing(latestRound);
+            }
+            
+            defaultViewIsSet.current = true; // Mark as set to prevent this from running again
         }
     }, [rounds, selectedRoundForEditing]);
 
@@ -59,8 +90,8 @@ export const Results: React.FC<ResultsProps> = ({ participants, rounds, isAdmin,
         const finalPoints = pointsStr === '' ? 0 : parseInt(pointsStr, 10);
         if (isNaN(finalPoints)) return;
 
-        setAllRiderPoints(prev => ({ ...prev, [selectedRoundForEditing]: { ...prev[selectedRoundForEditing], [riderId]: finalPoints }}));
-        const { error } = await supabase.from('rider_points').upsert({ round_id: selectedRoundForEditing, rider_id: riderId, points: finalPoints });
+        setAllRiderPoints(prev => ({ ...prev, [selectedRoundForEditing.id]: { ...prev[selectedRoundForEditing.id], [riderId]: finalPoints }}));
+        const { error } = await supabase.from('rider_points').upsert({ round_id: selectedRoundForEditing.id, rider_id: riderId, points: finalPoints });
         if (error) {
             console.error('Error upserting rider points:', error);
             showToast('Error al guardar los puntos.', 'error');
@@ -69,8 +100,8 @@ export const Results: React.FC<ResultsProps> = ({ participants, rounds, isAdmin,
     
     const confirmClearPoints = async () => {
         if (selectedRoundForEditing === null) return;
-        setAllRiderPoints(prev => ({ ...prev, [selectedRoundForEditing]: {} }));
-        const { error } = await supabase.from('rider_points').delete().eq('round_id', selectedRoundForEditing);
+        setAllRiderPoints(prev => ({ ...prev, [selectedRoundForEditing.id]: {} }));
+        const { error } = await supabase.from('rider_points').delete().eq('round_id', selectedRoundForEditing.id);
         if (error) {
             console.error('Error clearing points:', error);
             showToast('Error al limpiar los puntos.', 'error');
@@ -86,17 +117,28 @@ export const Results: React.FC<ResultsProps> = ({ participants, rounds, isAdmin,
         setParticipantToDelete(null);
     };
 
-    const calculateScore = useCallback((team_ids: number[]): number => {
+    const calculateScore = useCallback((participant: Participant): number => {
         if (leaderboardView === 'general') {
-            return Object.values(allRiderPoints).reduce((totalScore, roundPoints) => 
-                totalScore + team_ids.reduce((roundTotal, riderId) => roundTotal + (roundPoints[riderId] || 0), 0), 0);
+            return rounds.reduce((totalScore, round) => {
+                const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
+                const roundPointsMap = allRiderPoints[round.id] || {};
+                const roundScore = teamForRound.reduce((acc, riderId) => acc + (roundPointsMap[riderId] || 0), 0);
+                return totalScore + roundScore;
+            }, 0);
+        } else {
+            const round = rounds.find(r => r.id === leaderboardView);
+            if (!round) return 0;
+            const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
+            const roundPointsMap = allRiderPoints[leaderboardView] || {};
+            return teamForRound.reduce((acc, riderId) => acc + (roundPointsMap[riderId] || 0), 0);
         }
-        const roundPoints = allRiderPoints[leaderboardView] || {};
-        return team_ids.reduce((total, riderId) => total + (roundPoints[riderId] || 0), 0);
-    }, [allRiderPoints, leaderboardView]);
+    }, [leaderboardView, rounds, teamSnapshots, allRiderPoints]);
 
     const sortedParticipants = useMemo(() => {
-        return [...participants].sort((a, b) => calculateScore(b.team_ids) - calculateScore(a.team_ids));
+        return [...participants].map(p => ({
+            ...p,
+            score: calculateScore(p)
+        })).sort((a, b) => b.score - a.score);
     }, [participants, calculateScore]);
 
     return (
@@ -107,10 +149,13 @@ export const Results: React.FC<ResultsProps> = ({ participants, rounds, isAdmin,
                     onAddRound={onAddRound}
                     selectedRound={selectedRoundForEditing}
                     onSelectRound={setSelectedRoundForEditing}
+                    onUpdateRound={onUpdateRound}
                     onClearPoints={() => setIsConfirmingClearPoints(true)}
                     riders={MOTOGP_RIDERS}
                     riderPoints={allRiderPoints}
                     onPointChange={handlePointChange}
+                    leagueSettings={leagueSettings}
+                    onUpdateMarketDeadline={onUpdateMarketDeadline}
                     showToast={showToast}
                 />
             )}
@@ -120,10 +165,11 @@ export const Results: React.FC<ResultsProps> = ({ participants, rounds, isAdmin,
                 rounds={rounds}
                 leaderboardView={leaderboardView}
                 onLeaderboardViewChange={setLeaderboardView}
-                calculateScore={calculateScore}
                 isAdmin={isAdmin}
                 onDeleteParticipant={setParticipantToDelete}
                 onUpdateParticipant={onUpdateParticipant}
+                allRiderPoints={allRiderPoints}
+                teamSnapshots={teamSnapshots}
             />
 
             <Modal

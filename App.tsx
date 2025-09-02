@@ -6,7 +6,7 @@ import { Results } from './components/Results';
 import { Toast } from './components/Toast';
 import { Modal } from './components/Modal';
 import { supabase } from './lib/supabaseClient';
-import type { Participant, Rider, Round } from './types';
+import type { Participant, Rider, Round, TeamSnapshot, LeagueSettings } from './types';
 
 type View = 'builder' | 'results';
 
@@ -14,6 +14,8 @@ const App: React.FC = () => {
     const [view, setView] = useState<View>('builder');
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [rounds, setRounds] = useState<Round[]>([]);
+    const [teamSnapshots, setTeamSnapshots] = useState<TeamSnapshot[]>([]);
+    const [leagueSettings, setLeagueSettings] = useState<LeagueSettings | null>(null);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
     
@@ -68,75 +70,112 @@ const App: React.FC = () => {
         showToast('Modo administrador desactivado.', 'success');
     };
 
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        const [participantsRes, roundsRes, snapshotsRes, settingsRes] = await Promise.all([
+            supabase.from('participants').select('*').order('id'),
+            supabase.from('rounds').select('*').order('created_at'),
+            supabase.from('team_snapshots').select('*').order('created_at'),
+            supabase.from('league_settings').select('*').limit(1).single()
+        ]);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
-            const [participantsRes, roundsRes] = await Promise.all([
-                supabase.from('participants').select('*').order('id'),
-                supabase.from('rounds').select('*').order('created_at')
-            ]);
+        if (participantsRes.error) {
+            console.error('Error fetching participants:', participantsRes.error);
+            showToast('No se pudieron cargar los participantes.', 'error');
+        } else {
+            setParticipants(participantsRes.data || []);
+        }
 
-            if (participantsRes.error) {
-                console.error('Error fetching participants:', participantsRes.error);
-                showToast('No se pudieron cargar los participantes.', 'error');
-            } else {
-                setParticipants(participantsRes.data || []);
+        if (roundsRes.error) {
+            console.error('Error fetching rounds:', roundsRes.error);
+            showToast('No se pudieron cargar las jornadas.', 'error');
+        } else {
+            setRounds(roundsRes.data || []);
+        }
+        
+        if (snapshotsRes.error) {
+            console.error('Error fetching snapshots:', snapshotsRes.error);
+            showToast('No se pudo cargar el historial de equipos.', 'error');
+        } else {
+            setTeamSnapshots(snapshotsRes.data || []);
+        }
+
+        if (settingsRes.error) {
+            // Don't show an error if it's just 'PGRST116' (No rows found), this is expected on first run
+            if (settingsRes.error.code !== 'PGRST116') {
+                 console.error('Error fetching settings:', settingsRes.error);
             }
+            setLeagueSettings(null);
+        } else {
+            setLeagueSettings(settingsRes.data || null);
+        }
 
-            if (roundsRes.error) {
-                console.error('Error fetching rounds:', roundsRes.error);
-                showToast('No se pudieron cargar las jornadas.', 'error');
-            } else {
-                setRounds(roundsRes.data || []);
-            }
-
-            setLoading(false);
-        };
-        fetchData();
+        setLoading(false);
     }, [showToast]);
 
-    const addParticipantToLeague = useCallback(async (name: string, team: Rider[]): Promise<boolean> => {
-        const newParticipantData = {
-            name,
-            team_ids: team.map(r => r.id),
-        };
 
-        const { data, error } = await supabase
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    const addParticipantToLeague = useCallback(async (name: string, team: Rider[]): Promise<boolean> => {
+        const team_ids = team.map(r => r.id);
+
+        const { data: newParticipant, error: participantError } = await supabase
             .from('participants')
-            .insert(newParticipantData)
+            .insert({ name, team_ids })
             .select()
             .single();
 
-        if (error) {
-            console.error('Error adding participant:', error);
-            showToast('Error al añadir participante.', 'error');
+        if (participantError || !newParticipant) {
+            console.error('Error adding participant:', participantError);
+            showToast('Error al añadir participante. ¿Quizás el nombre ya existe?', 'error');
             return false;
-        } 
-        
-        if (data) {
-            setParticipants(prev => [...prev, data]);
-            showToast(`'${name}' ha sido añadido a la liga.`, 'success');
-            setView('results');
-            return true;
         }
-        return false;
-    }, [showToast]);
+
+        const { error: snapshotError } = await supabase
+            .from('team_snapshots')
+            .insert({ participant_id: newParticipant.id, team_ids });
+        
+        if (snapshotError) {
+             console.error('Error creating snapshot:', snapshotError);
+             showToast('Error al guardar el historial del equipo.', 'error');
+             // Attempt to roll back participant creation for consistency
+             await supabase.from('participants').delete().eq('id', newParticipant.id);
+             return false;
+        }
+        
+        await fetchData(); // Refetch all data to ensure consistency
+        showToast(`'${name}' ha sido añadido a la liga.`, 'success');
+        setView('results');
+        return true;
+    }, [showToast, fetchData]);
 
     const handleUpdateParticipantTeam = async (participantId: number, team: Rider[]): Promise<boolean> => {
         const team_ids = team.map(r => r.id);
-        const { error } = await supabase
+
+        const { error: updateError } = await supabase
             .from('participants')
             .update({ team_ids })
             .eq('id', participantId);
 
-        if (error) {
-            console.error('Error updating team:', error);
+        if (updateError) {
+            console.error('Error updating team:', updateError);
             showToast('Error al actualizar el equipo.', 'error');
             return false;
         }
         
-        setParticipants(prev => prev.map(p => p.id === participantId ? { ...p, team_ids } : p));
+        const { error: snapshotError } = await supabase
+            .from('team_snapshots')
+            .insert({ participant_id: participantId, team_ids });
+            
+        if (snapshotError) {
+            console.error('Error updating snapshot:', snapshotError);
+            showToast('Error al guardar el historial del equipo.', 'error');
+            // Data is now inconsistent, but rolling back is complex. Refetching will show the current state.
+        }
+        
+        await fetchData();
         showToast('Equipo actualizado con éxito.', 'success');
         return true;
     };
@@ -157,6 +196,8 @@ const App: React.FC = () => {
     };
     
     const handleDeleteParticipant = async (participantId: number) => {
+        // Note: This will cascade delete snapshots if set up in DB, otherwise they remain.
+        // For simplicity, we are not cleaning snapshots here, but a real app should.
         const { error } = await supabase
             .from('participants')
             .delete()
@@ -166,7 +207,7 @@ const App: React.FC = () => {
              console.error('Error deleting participant:', error);
             showToast('Error al eliminar participante.', 'error');
         } else {
-            setParticipants(prev => prev.filter(p => p.id !== participantId));
+            await fetchData();
             showToast('Participante eliminado.', 'success');
         }
     };
@@ -186,11 +227,42 @@ const App: React.FC = () => {
             showToast(`Jornada '${roundName}' creada.`, 'success');
         }
     };
+    
+    const handleUpdateRound = async (round: Round) => {
+        const { error } = await supabase
+            .from('rounds')
+            .update({ name: round.name, round_date: round.round_date })
+            .eq('id', round.id);
+
+        if (error) {
+            showToast('Error al actualizar la jornada.', 'error');
+        } else {
+            setRounds(prev => prev.map(r => r.id === round.id ? round : r));
+            showToast('Jornada actualizada.', 'success');
+        }
+    };
+    
+    const handleUpdateMarketDeadline = async (deadline: string | null) => {
+        // Using upsert is more robust. It will insert if no row with the given ID exists,
+        // or update it if it does. We'll use a fixed ID of 1 for the single settings row.
+        const { error } = await supabase
+            .from('league_settings')
+            .upsert({ id: 1, market_deadline: deadline });
+
+        if (error) {
+            console.error('Error updating market deadline:', error);
+            showToast('Error al actualizar la fecha límite.', 'error');
+        } else {
+            await fetchData(); // Refetch data to ensure UI consistency
+            showToast('Fecha límite del mercado actualizada.', 'success');
+        }
+    };
+
 
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
-                <svg className="animate-spin h-10 w-10 text-red-600 mb-4" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <svg className="animate-spin h-10 w-10 text-red-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
@@ -216,16 +288,21 @@ const App: React.FC = () => {
                         onAddToLeague={addParticipantToLeague}
                         onUpdateTeam={handleUpdateParticipantTeam}
                         showToast={showToast}
+                        marketDeadline={leagueSettings?.market_deadline || null}
                     />
                 )}
                 {view === 'results' && (
                     <Results 
                         participants={participants}
                         rounds={rounds}
+                        teamSnapshots={teamSnapshots}
+                        leagueSettings={leagueSettings}
                         isAdmin={isAdmin}
                         onUpdateParticipant={handleUpdateParticipant}
                         onDeleteParticipant={handleDeleteParticipant}
                         onAddRound={handleAddRound}
+                        onUpdateRound={handleUpdateRound}
+                        onUpdateMarketDeadline={handleUpdateMarketDeadline}
                         showToast={showToast}
                     />
                 )}

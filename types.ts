@@ -17,6 +17,18 @@ export interface Participant {
 export interface Round {
     id: number;
     name: string;
-    // FIX: Add created_at property to match the data fetched from the 'rounds' table in Supabase. This resolves a TypeScript error in Results.tsx.
     created_at: string;
+    round_date: string | null;
+}
+
+export interface TeamSnapshot {
+    id: number;
+    participant_id: number;
+    team_ids: number[];
+    created_at: string;
+}
+
+export interface LeagueSettings {
+    id: number;
+    market_deadline: string | null;
 }

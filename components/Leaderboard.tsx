@@ -1,17 +1,23 @@
 import React, { useState } from 'react';
-import type { Rider, Participant, Round } from '../types';
+import type { Rider, Participant, Round, TeamSnapshot } from '../types';
 import { MOTOGP_RIDERS, TEAM_SIZE } from '../constants';
 import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon } from './Icons';
 
+type AllRiderPoints = Record<number, Record<number, number>>;
+
+interface ParticipantWithScore extends Participant {
+    score: number;
+}
 interface LeaderboardProps {
-    participants: Participant[];
+    participants: ParticipantWithScore[];
     rounds: Round[];
     leaderboardView: number | 'general';
     onLeaderboardViewChange: (view: number | 'general') => void;
-    calculateScore: (team_ids: number[]) => number;
     isAdmin: boolean;
     onDeleteParticipant: (participant: Participant) => void;
     onUpdateParticipant: (participant: Participant) => Promise<void>;
+    allRiderPoints: AllRiderPoints;
+    teamSnapshots: TeamSnapshot[];
 }
 
 const ridersById = MOTOGP_RIDERS.reduce((acc, rider) => {
@@ -19,15 +25,26 @@ const ridersById = MOTOGP_RIDERS.reduce((acc, rider) => {
     return acc;
 }, {} as Record<number, Rider>);
 
+const getTeamForRound = (participantId: number, roundDate: string | null, snapshots: TeamSnapshot[]): number[] => {
+    if (!roundDate) return [];
+    
+    const participantSnapshots = snapshots
+        .filter(s => s.participant_id === participantId && new Date(s.created_at) < new Date(roundDate))
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        
+    return participantSnapshots.length > 0 ? participantSnapshots[0].team_ids : [];
+};
+
 export const Leaderboard: React.FC<LeaderboardProps> = ({
     participants,
     rounds,
     leaderboardView,
     onLeaderboardViewChange,
-    calculateScore,
     isAdmin,
     onDeleteParticipant,
     onUpdateParticipant,
+    allRiderPoints,
+    teamSnapshots,
 }) => {
     const [editingName, setEditingName] = useState<{ id: number; name: string } | null>(null);
 
@@ -53,11 +70,19 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         if (index === 2) return 'border-l-4 border-yellow-700';
         return 'border-l-4 border-transparent';
     };
+    
+    const getTitle = () => {
+        if (leaderboardView === 'general') {
+            return "Clasificación General";
+        }
+        const round = rounds.find(r => r.id === leaderboardView);
+        return round ? `Clasificación ${round.name}` : "Clasificación de la Liga";
+    };
 
     return (
         <div className="flex-grow">
             <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold">Clasificación de la Liga</h2>
+                <h2 className="text-2xl font-bold">{getTitle()}</h2>
                 <select
                     value={leaderboardView}
                     onChange={e => onLeaderboardViewChange(e.target.value === 'general' ? 'general' : Number(e.target.value))}
@@ -98,7 +123,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                 <div className="flex items-center gap-2">
                                     <div className="flex items-center gap-2 bg-yellow-400/10 text-yellow-300 font-bold px-3 py-1 rounded-full">
                                         <TrophyIcon className="w-5 h-5"/>
-                                        <span>{calculateScore(participant.team_ids)} pts</span>
+                                        <span>{participant.score} pts</span>
                                     </div>
                                     {isAdmin && (
                                         <>
@@ -113,17 +138,58 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                 </div>
                             </div>
                             <div className="bg-gray-900/50 p-3 rounded-md">
-                                <p className="text-xs text-gray-400 mb-2 uppercase">Equipo ({participant.team_ids.length}/{TEAM_SIZE})</p>
-                                {participant.team_ids.length > 0 ? (
-                                    <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 text-sm">
-                                        {participant.team_ids.map(riderId => (
-                                            <li key={riderId} className="bg-gray-700 p-1.5 rounded-md flex justify-between items-center">
-                                                <span className="truncate">{ridersById[riderId]?.name ?? 'N/A'}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
+                                {leaderboardView === 'general' ? (
+                                    <>
+                                        <p className="text-xs text-gray-400 mb-2 uppercase">Puntuación por Jornada</p>
+                                        {rounds.length > 0 ? (
+                                            <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
+                                                {rounds.map(round => {
+                                                    const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
+                                                    const roundPointsMap = allRiderPoints[round.id] || {};
+                                                    const roundScore = teamForRound.reduce((acc, riderId) => acc + (roundPointsMap[riderId] || 0), 0);
+                                                    return (
+                                                        <li key={round.id} className="flex justify-between items-baseline">
+                                                            <span className="truncate text-gray-300 mr-2">{round.name}:</span>
+                                                            <span className="font-semibold text-white whitespace-nowrap">{roundScore} pts</span>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        ) : (
+                                            <p className="text-gray-500 text-sm">Aún no se han creado jornadas.</p>
+                                        )}
+                                    </>
                                 ) : (
-                                    <p className="text-gray-500 text-sm">Aún no se ha seleccionado ningún piloto.</p>
+                                    <>
+                                        {(() => {
+                                            const round = rounds.find(r => r.id === leaderboardView);
+                                            if (!round) return <p className="text-gray-500 text-sm">Jornada no encontrada.</p>;
+                                            const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
+                                            const roundPointsMap = allRiderPoints[leaderboardView] || {};
+
+                                            return (
+                                                <>
+                                                    <p className="text-xs text-gray-400 mb-2 uppercase">Equipo para {round.name} ({teamForRound.length}/{TEAM_SIZE})</p>
+                                                    {teamForRound.length > 0 ? (
+                                                        <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 text-sm">
+                                                            {teamForRound.map(riderId => {
+                                                                const riderPoints = roundPointsMap[riderId] || 0;
+                                                                const rider = ridersById[riderId];
+                                                                return (
+                                                                    <li key={riderId} className="bg-gray-700 p-1.5 rounded-md text-center">
+                                                                        <p className="truncate font-semibold">{rider?.name ?? 'N/A'}</p>
+                                                                        <p className="text-yellow-300 font-bold">{riderPoints} pts</p>
+                                                                    </li>
+                                                                );
+                                                            })}
+                                                        </ul>
+                                                    ) : (
+                                                        <p className="text-gray-500 text-sm">No se encontró un equipo guardado antes de la fecha de esta jornada.</p>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </>
                                 )}
                             </div>
                         </div>

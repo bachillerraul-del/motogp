@@ -1,16 +1,18 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Rider, Participant } from '../types';
 import { MOTOGP_RIDERS, TEAM_SIZE, BUDGET } from '../constants';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
 import { CloseIcon } from './Icons';
 import { Modal } from './Modal';
+import { Countdown } from './Countdown';
 
 interface TeamBuilderProps {
     participants: Participant[];
     onAddToLeague: (name: string, team: Rider[]) => Promise<boolean>;
     onUpdateTeam: (participantId: number, team: Rider[]) => Promise<boolean>;
     showToast: (message: string, type: 'success' | 'error') => void;
+    marketDeadline: string | null;
 }
 
 type SaveModalState = 'closed' | 'enterName' | 'confirmUpdate';
@@ -63,13 +65,55 @@ const shareTeamOnWhatsapp = (team: Rider[]) => {
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 };
 
-export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToLeague, onUpdateTeam, showToast }) => {
+const calculateTimeRemaining = (deadline: Date) => {
+    const total = deadline.getTime() - new Date().getTime();
+    const seconds = Math.floor((total / 1000) % 60);
+    const minutes = Math.floor((total / 1000 / 60) % 60);
+    const hours = Math.floor((total / (1000 * 60 * 60)) % 24);
+    const days = Math.floor(total / (1000 * 60 * 60 * 24));
+    return { days, hours, minutes, seconds };
+};
+
+export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToLeague, onUpdateTeam, showToast, marketDeadline }) => {
     const { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull } = useTeamManagement(showToast);
     
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
     const [saveModalState, setSaveModalState] = useState<SaveModalState>('closed');
     const [participantName, setParticipantName] = useState('');
     const [participantToUpdate, setParticipantToUpdate] = useState<Participant | null>(null);
+
+    const deadlineDate = useMemo(() => marketDeadline ? new Date(marketDeadline) : null, [marketDeadline]);
+    const [marketStatus, setMarketStatus] = useState({ 
+        isOpen: true, 
+        timeRemaining: { days: 0, hours: 0, minutes: 0, seconds: 0 } 
+    });
+
+    useEffect(() => {
+        if (!deadlineDate) {
+            setMarketStatus(prev => ({ ...prev, isOpen: true }));
+            return;
+        }
+
+        const updateStatus = () => {
+            const now = new Date();
+            if (now >= deadlineDate) {
+                setMarketStatus({ isOpen: false, timeRemaining: { days: 0, hours: 0, minutes: 0, seconds: 0 } });
+                return true; // Timer finished
+            }
+            setMarketStatus({ isOpen: true, timeRemaining: calculateTimeRemaining(deadlineDate) });
+            return false; // Timer still running
+        };
+
+        if (updateStatus()) return; // If market already closed, no need for interval
+
+        const timer = setInterval(() => {
+            if (updateStatus()) {
+                clearInterval(timer);
+            }
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [deadlineDate]);
 
     const ridersInLeagues = useMemo(() => {
         const riderSelectionMap: Record<number, string[]> = {};
@@ -86,7 +130,6 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
 
     const availableRiders = useMemo(() => {
         const teamIds = new Set(team.map(r => r.id));
-        // FIX: The filter was incorrectly passing a `Rider` object to `teamIds.has()` which expects a number. Changed to `r.id`.
         const filteredRiders = MOTOGP_RIDERS.filter(r => !teamIds.has(r.id));
 
         const available = [];
@@ -112,6 +155,10 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
     };
 
     const handleSaveAndShareClick = () => {
+        if (!marketStatus.isOpen) {
+            showToast('El mercado está cerrado. No se pueden hacer cambios.', 'error');
+            return;
+        }
         if (team.length === TEAM_SIZE) {
             setSaveModalState('enterName');
         }
@@ -153,13 +200,30 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
     return (
         <div className="flex flex-col lg:flex-row gap-8">
             <div className="flex-grow pb-24 lg:pb-0">
+                {deadlineDate && (
+                    <div className="bg-gray-800 p-4 rounded-lg mb-6 text-center shadow-lg">
+                        {marketStatus.isOpen ? (
+                            <>
+                                <h3 className="text-lg font-semibold text-red-500 mb-2 uppercase tracking-wider">Cierre de Mercado</h3>
+                                <Countdown timeRemaining={marketStatus.timeRemaining} />
+                                <p className="text-sm text-gray-400 mt-3">
+                                    Fecha límite: {deadlineDate.toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' })}
+                                </p>
+                            </>
+                        ) : (
+                            <div className="py-4">
+                                <h3 className="text-2xl font-bold text-red-600 uppercase tracking-widest">Mercado Cerrado</h3>
+                            </div>
+                        )}
+                    </div>
+                )}
                 <h2 className="text-3xl font-bold mb-6 border-b-2 border-red-600 pb-2">Elige tus Pilotos</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {availableRiders.map(rider => (
                         <RiderCard 
                             key={rider.id} 
                             rider={rider} 
-                            onAdd={addRider} 
+                            onAdd={() => marketStatus.isOpen ? addRider(rider) : showToast('El mercado está cerrado.', 'error')} 
                             isTeamFull={isTeamFull}
                             isAffordable={rider.price <= (remainingBudget < 0 ? 0 : remainingBudget)}
                             selectedByTeams={ridersInLeagues[rider.id] || []}
@@ -174,7 +238,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                         team={team}
                         teamTotalPrice={teamTotalPrice}
                         remainingBudget={remainingBudget}
-                        onRemoveRider={removeRider}
+                        onRemoveRider={(rider) => marketStatus.isOpen ? removeRider(rider) : showToast('El mercado está cerrado.', 'error')}
                         onSaveAndShare={handleSaveAndShareClick}
                    />
                 </div>
@@ -219,7 +283,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                                 team={team}
                                 teamTotalPrice={teamTotalPrice}
                                 remainingBudget={remainingBudget}
-                                onRemoveRider={removeRider}
+                                onRemoveRider={(rider) => marketStatus.isOpen ? removeRider(rider) : showToast('El mercado está cerrado.', 'error')}
                                 onSaveAndShare={() => {
                                     handleSaveAndShareClick();
                                     setIsMobileSidebarOpen(false);
