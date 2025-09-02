@@ -10,7 +10,6 @@ export const MOTOGP_RIDERS: Rider[] = [
         team: 'Ducati Lenovo Team',
         bike: 'Ducati',
         price: 600,
-        condition: 'Rider on fire',
     },
     {
         id: 2,
@@ -32,7 +31,6 @@ export const MOTOGP_RIDERS: Rider[] = [
         team: 'Aprilia Racing',
         bike: 'Aprilia',
         price: 390,
-        condition: 'Rider on fire',
     },
     {
         id: 5,
@@ -131,7 +129,6 @@ export const MOTOGP_RIDERS: Rider[] = [
         team: 'Gresini Racing MotoGP™',
         bike: 'Ducati',
         price: 290,
-        condition: 'Rider on fire',
     },
     {
         id: 19,

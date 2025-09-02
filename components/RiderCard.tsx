@@ -7,25 +7,12 @@ interface RiderCardProps {
     onAdd: (rider: Rider) => void;
     isTeamFull: boolean;
     isAffordable: boolean;
+    selectedByTeams: string[];
 }
 
 const formatPrice = (price: number): string => `€${price.toLocaleString('es-ES')}`;
 
-const renderCondition = (condition?: string) => {
-    if (!condition) return null;
-    if (condition.includes('fire')) {
-        return <p className="text-sm text-yellow-400 font-semibold mb-4 animate-pulse">🔥 {condition}</p>;
-    }
-    if (condition.includes('injured')) {
-        return <p className="text-sm text-red-400 font-semibold mb-4">🩹 {condition}</p>;
-    }
-    if (condition.includes('unavailable')) {
-        return <p className="text-sm text-gray-400 font-semibold mb-4">❌ {condition}</p>;
-    }
-    return null;
-}
-
-export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable }) => {
+export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable, selectedByTeams }) => {
     const isSelectable = !rider.condition?.includes('unavailable') && !rider.condition?.includes('injured');
 
     const getButtonText = () => {
@@ -33,6 +20,24 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
         if (isTeamFull) return 'Equipo Lleno';
         if (!isAffordable) return 'Excede Presupuesto';
         return 'Añadir al Equipo';
+    };
+
+    const renderDynamicCondition = () => {
+        if (rider.condition?.includes('injured')) {
+            return <p className="text-sm text-red-400 font-semibold mb-4">🩹 {rider.condition}</p>;
+        }
+        if (rider.condition?.includes('unavailable')) {
+            return <p className="text-sm text-gray-400 font-semibold mb-4">❌ {rider.condition}</p>;
+        }
+        if (selectedByTeams.length > 0) {
+            const teamsList = selectedByTeams.join(', ');
+            return (
+                 <p className="text-sm text-yellow-400 font-semibold mb-4 animate-pulse">
+                    🔥 En equipos: <span className="font-normal text-gray-300">{teamsList}</span>
+                </p>
+            );
+        }
+        return null;
     };
 
     return (
@@ -47,7 +52,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
                         <p className="text-lg font-semibold text-white">{formatPrice(rider.price)}</p>
                     </div>
                 </div>
-                {renderCondition(rider.condition)}
+                {renderDynamicCondition()}
             </div>
             <button
                 onClick={() => onAdd(rider)}

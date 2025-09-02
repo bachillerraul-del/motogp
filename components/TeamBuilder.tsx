@@ -71,9 +71,38 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
     const [participantName, setParticipantName] = useState('');
     const [participantToUpdate, setParticipantToUpdate] = useState<Participant | null>(null);
 
+    const ridersInLeagues = useMemo(() => {
+        const riderSelectionMap: Record<number, string[]> = {};
+        for (const participant of participants) {
+            for (const riderId of participant.team_ids) {
+                if (!riderSelectionMap[riderId]) {
+                    riderSelectionMap[riderId] = [];
+                }
+                riderSelectionMap[riderId].push(participant.name);
+            }
+        }
+        return riderSelectionMap;
+    }, [participants]);
+
     const availableRiders = useMemo(() => {
         const teamIds = new Set(team.map(r => r.id));
-        return MOTOGP_RIDERS.filter(r => !teamIds.has(r.id)).sort((a, b) => b.price - a.price);
+        // FIX: The filter was incorrectly passing a `Rider` object to `teamIds.has()` which expects a number. Changed to `r.id`.
+        const filteredRiders = MOTOGP_RIDERS.filter(r => !teamIds.has(r.id));
+
+        const available = [];
+        const unavailable = [];
+
+        for (const rider of filteredRiders) {
+            if (rider.condition?.includes('unavailable') || rider.condition?.includes('injured')) {
+                unavailable.push(rider);
+            } else {
+                available.push(rider);
+            }
+        }
+        
+        available.sort((a, b) => b.price - a.price);
+
+        return [...available, ...unavailable];
     }, [team]);
 
     const resetSaveModal = () => {
@@ -133,6 +162,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                             onAdd={addRider} 
                             isTeamFull={isTeamFull}
                             isAffordable={rider.price <= (remainingBudget < 0 ? 0 : remainingBudget)}
+                            selectedByTeams={ridersInLeagues[rider.id] || []}
                         />
                     ))}
                 </div>
