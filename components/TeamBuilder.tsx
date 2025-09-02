@@ -5,6 +5,7 @@ import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
 import { CloseIcon } from './Icons';
 
+// Props for the main component
 interface TeamBuilderProps {
     participants: Participant[];
     onAddToLeague: (name: string, team: Rider[]) => Promise<boolean>;
@@ -12,65 +13,97 @@ interface TeamBuilderProps {
     showToast: (message: string, type: 'success' | 'error') => void;
 }
 
-export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToLeague, onUpdateTeam, showToast }) => {
+// Custom hook for managing the fantasy team state and logic.
+// This encapsulates all team-related state, derived calculations, and actions.
+const useTeamManagement = (showToast: TeamBuilderProps['showToast']) => {
     const [team, setTeam] = useState<Rider[]>([]);
-    const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-    const teamTotalPrice = useMemo(() => {
-        return team.reduce((sum, rider) => sum + rider.price, 0);
-    }, [team]);
-
+    const teamTotalPrice = useMemo(() => team.reduce((sum, rider) => sum + rider.price, 0), [team]);
     const remainingBudget = useMemo(() => BUDGET - teamTotalPrice, [teamTotalPrice]);
+    const isTeamFull = useMemo(() => team.length >= TEAM_SIZE, [team]);
 
-    const addRiderToTeam = useCallback((rider: Rider) => {
+    const addRider = useCallback((rider: Rider) => {
         if (rider.condition?.includes('unavailable') || rider.condition?.includes('injured')) {
-            return; 
-        }
-        if (team.length >= TEAM_SIZE) {
-            showToast('Tu equipo ya está lleno. No puedes añadir más de 5 pilotos.', 'error');
+            showToast('Este piloto no está disponible para selección.', 'error');
             return;
         }
-        if (team.find(r => r.id === rider.id)) {
+        if (isTeamFull) {
+            showToast('Tu equipo ya está lleno.', 'error');
+            return;
+        }
+        if (team.some(r => r.id === rider.id)) {
             showToast('Este piloto ya está en tu equipo.', 'error');
             return;
         }
         if (rider.price > remainingBudget) {
-            showToast(`No puedes añadir a ${rider.name}. Excederías el presupuesto.`, 'error');
+            showToast('No tienes presupuesto suficiente para este piloto.', 'error');
             return;
         }
         setTeam(prevTeam => [...prevTeam, rider]);
         showToast(`${rider.name} añadido al equipo.`, 'success');
-    }, [team, remainingBudget, showToast]);
+    }, [team, remainingBudget, isTeamFull, showToast]);
 
-    const removeRiderFromTeam = useCallback((rider: Rider) => {
+    const removeRider = useCallback((rider: Rider) => {
         setTeam(prevTeam => prevTeam.filter(r => r.id !== rider.id));
         showToast(`${rider.name} quitado del equipo.`, 'success');
     }, [showToast]);
 
-    const handleShare = () => {
-        const riderList = team.map((r, index) => 
-            `${index + 1}. ${r.name} (${r.team})`
-        ).join('\n');
-        
-        const teamPrice = team.reduce((sum, rider) => sum + rider.price, 0).toFixed(2);
+    const clearTeam = useCallback(() => {
+        setTeam([]);
+    }, []);
 
-        const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: €${teamPrice}m*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
-        
-        const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-        
-        // Use a more reliable method for mobile devices
-        const link = document.createElement('a');
-        link.href = whatsappUrl;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    return {
+        team,
+        addRider,
+        removeRider,
+        clearTeam,
+        teamTotalPrice,
+        remainingBudget,
+        isTeamFull,
     };
+};
 
+// Utility function to handle sharing to WhatsApp.
+const shareTeamOnWhatsapp = (team: Rider[]) => {
+    const riderList = team.map((r, index) => 
+        `${index + 1}. ${r.name} (${r.team})`
+    ).join('\n');
+    
+    const teamPrice = team.reduce((sum, rider) => sum + rider.price, 0).toFixed(2);
+
+    const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: €${teamPrice}m*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    
+    // Open in a new tab
+    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+};
+
+
+export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToLeague, onUpdateTeam, showToast }) => {
+    const {
+        team,
+        addRider,
+        removeRider,
+        clearTeam,
+        teamTotalPrice,
+        remainingBudget,
+        isTeamFull,
+    } = useTeamManagement(showToast);
+
+    const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+    // Memoize the list of riders available for selection.
+    const availableRiders = useMemo(() => {
+        const teamIds = new Set(team.map(r => r.id));
+        return [...MOTOGP_RIDERS]
+            .sort((a, b) => b.price - a.price)
+            .filter(r => !teamIds.has(r.id));
+    }, [team]);
+
+    // Handles the entire process of saving the team to the league and sharing it.
     const handleSaveAndShare = async () => {
         const participantName = window.prompt("Introduce tu nombre de participante para la liga:");
-        if (!participantName || participantName.trim() === "") {
+        if (!participantName?.trim()) {
             if (participantName !== null) { // User clicked OK but left it empty
                 showToast('El nombre del participante no puede estar vacío.', 'error');
             }
@@ -91,20 +124,11 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
         }
 
         if (success) {
-            handleShare();
-            setTeam([]); 
+            shareTeamOnWhatsapp(team);
+            clearTeam(); 
         }
     };
     
-    const sortedRiders = useMemo(() => 
-        [...MOTOGP_RIDERS].sort((a, b) => b.price - a.price), 
-    []);
-
-    const availableRiders = useMemo(() => {
-        const teamIds = new Set(team.map(r => r.id));
-        return sortedRiders.filter(r => !teamIds.has(r.id));
-    }, [team, sortedRiders]);
-
     return (
         <div className="flex flex-col lg:flex-row gap-8">
             {/* Rider Selection Area */}
@@ -115,8 +139,8 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                         <RiderCard 
                             key={rider.id} 
                             rider={rider} 
-                            onAdd={() => addRiderToTeam(rider)} 
-                            isTeamFull={team.length >= TEAM_SIZE}
+                            onAdd={addRider} 
+                            isTeamFull={isTeamFull}
                             isAffordable={rider.price <= remainingBudget}
                         />
                     ))}
@@ -130,13 +154,13 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                         team={team}
                         teamTotalPrice={teamTotalPrice}
                         remainingBudget={remainingBudget}
-                        onRemoveRider={removeRiderFromTeam}
+                        onRemoveRider={removeRider}
                         onSaveAndShare={handleSaveAndShare}
                    />
                 </div>
             </aside>
 
-            {/* Mobile Fixed Footer & Sidebar */}
+            {/* Mobile UI: Fixed Footer & Sidebar Panel */}
             <div className="lg:hidden">
                 {/* Fixed Summary Bar */}
                 <div 
@@ -186,7 +210,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                                 team={team}
                                 teamTotalPrice={teamTotalPrice}
                                 remainingBudget={remainingBudget}
-                                onRemoveRider={removeRiderFromTeam}
+                                onRemoveRider={removeRider}
                                 onSaveAndShare={() => {
                                     handleSaveAndShare();
                                     setIsMobileSidebarOpen(false); // Close sidebar after action
