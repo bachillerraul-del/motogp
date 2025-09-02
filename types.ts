@@ -1,3 +1,4 @@
+
 export interface Rider {
     id: number;
     name: string;
@@ -19,4 +20,6 @@ export interface Participant {
 export interface Round {
     id: number;
     name: string;
+    // FIX: Add created_at property to match the data fetched from the 'rounds' table in Supabase. This resolves a TypeScript error in Results.tsx.
+    created_at: string;
 }

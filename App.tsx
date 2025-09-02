@@ -1,8 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
 import { TeamBuilder } from './components/TeamBuilder';
 import { Results } from './components/Results';
 import { Toast } from './components/Toast';
+import { Modal } from './components/Modal';
 import { supabase } from './lib/supabaseClient';
 import type { Participant, Rider, Round } from './types';
 
@@ -14,26 +16,58 @@ const App: React.FC = () => {
     const [rounds, setRounds] = useState<Round[]>([]);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
-    const [isAdmin, setIsAdmin] = useState(false);
+    
+    // Auth State
+    const [session, setSession] = useState<Session | null>(null);
+    const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+    const [loginEmail, setLoginEmail] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+    const [loginError, setLoginError] = useState<string | null>(null);
+    const isAdmin = !!session;
 
     const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
         setToast({ id: Date.now(), message, type });
     }, []);
 
-    const handleAdminLogin = () => {
-        const password = prompt('Introduce la contraseña de administrador:');
-        if (password === '1395') {
-            setIsAdmin(true);
-            showToast('Modo administrador activado.', 'success');
-        } else if (password !== null) {
-            showToast('Contraseña incorrecta.', 'error');
+    // Auth Management
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+            if (_event === 'SIGNED_IN') {
+                setIsLoginModalOpen(false);
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoginError(null);
+        const { error } = await supabase.auth.signInWithPassword({
+            email: loginEmail,
+            password: loginPassword,
+        });
+
+        if (error) {
+            console.error("Login Error:", error.message);
+            setLoginError('Email o contraseña inválidos.');
+        } else {
+            showToast('Login correcto. Modo administrador activado.', 'success');
+            setLoginEmail('');
+            setLoginPassword('');
         }
     };
 
-    const handleAdminLogout = () => {
-        setIsAdmin(false);
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
         showToast('Modo administrador desactivado.', 'success');
     };
+
 
     useEffect(() => {
         const fetchData = async () => {
@@ -156,7 +190,7 @@ const App: React.FC = () => {
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
-                <svg className="animate-spin h-10 w-10 text-red-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <svg className="animate-spin h-10 w-10 text-red-600 mb-4" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
@@ -172,8 +206,8 @@ const App: React.FC = () => {
                 currentView={view} 
                 setView={setView} 
                 isAdmin={isAdmin}
-                onAdminLogin={handleAdminLogin}
-                onAdminLogout={handleAdminLogout}
+                onAdminLogin={() => setIsLoginModalOpen(true)}
+                onAdminLogout={handleLogout}
             />
             <main className="container mx-auto p-4 md:p-8">
                 {view === 'builder' && (
@@ -196,6 +230,36 @@ const App: React.FC = () => {
                     />
                 )}
             </main>
+            <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Login">
+                <form onSubmit={handleLogin} className="space-y-4">
+                    <div>
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                        <input
+                            id="email"
+                            type="email"
+                            value={loginEmail}
+                            onChange={(e) => setLoginEmail(e.target.value)}
+                            className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                            required
+                        />
+                    </div>
+                     <div>
+                        <label htmlFor="password"className="block text-sm font-medium text-gray-300 mb-1">Contraseña</label>
+                        <input
+                            id="password"
+                            type="password"
+                            value={loginPassword}
+                            onChange={(e) => setLoginPassword(e.target.value)}
+                            className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                            required
+                        />
+                    </div>
+                    {loginError && <p className="text-sm text-red-500">{loginError}</p>}
+                    <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                        Iniciar Sesión
+                    </button>
+                </form>
+            </Modal>
         </div>
     );
 };

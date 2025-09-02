@@ -4,8 +4,8 @@ import { MOTOGP_RIDERS, TEAM_SIZE, BUDGET } from '../constants';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
 import { CloseIcon } from './Icons';
+import { Modal } from './Modal';
 
-// Props for the main component
 interface TeamBuilderProps {
     participants: Participant[];
     onAddToLeague: (name: string, team: Rider[]) => Promise<boolean>;
@@ -13,8 +13,8 @@ interface TeamBuilderProps {
     showToast: (message: string, type: 'success' | 'error') => void;
 }
 
-// Custom hook for managing the fantasy team state and logic.
-// This encapsulates all team-related state, derived calculations, and actions.
+type SaveModalState = 'closed' | 'enterName' | 'confirmUpdate';
+
 const useTeamManagement = (showToast: TeamBuilderProps['showToast']) => {
     const [team, setTeam] = useState<Rider[]>([]);
 
@@ -35,7 +35,7 @@ const useTeamManagement = (showToast: TeamBuilderProps['showToast']) => {
             showToast('Este piloto ya está en tu equipo.', 'error');
             return;
         }
-        if (rider.price > remainingBudget) {
+        if (remainingBudget < 0 || rider.price > remainingBudget) {
             showToast('No tienes presupuesto suficiente para este piloto.', 'error');
             return;
         }
@@ -52,86 +52,77 @@ const useTeamManagement = (showToast: TeamBuilderProps['showToast']) => {
         setTeam([]);
     }, []);
 
-    return {
-        team,
-        addRider,
-        removeRider,
-        clearTeam,
-        teamTotalPrice,
-        remainingBudget,
-        isTeamFull,
-    };
+    return { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull };
 };
 
-// Utility function to handle sharing to WhatsApp.
 const shareTeamOnWhatsapp = (team: Rider[]) => {
-    const riderList = team.map((r, index) => 
-        `${index + 1}. ${r.name} (${r.team})`
-    ).join('\n');
-    
+    const riderList = team.map((r, index) => `${index + 1}. ${r.name} (${r.team})`).join('\n');
     const teamPrice = team.reduce((sum, rider) => sum + rider.price, 0).toFixed(2);
-
     const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: €${teamPrice}m*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    
-    // Open in a new tab
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 };
 
-
 export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToLeague, onUpdateTeam, showToast }) => {
-    const {
-        team,
-        addRider,
-        removeRider,
-        clearTeam,
-        teamTotalPrice,
-        remainingBudget,
-        isTeamFull,
-    } = useTeamManagement(showToast);
-
+    const { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull } = useTeamManagement(showToast);
+    
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+    const [saveModalState, setSaveModalState] = useState<SaveModalState>('closed');
+    const [participantName, setParticipantName] = useState('');
+    const [participantToUpdate, setParticipantToUpdate] = useState<Participant | null>(null);
 
-    // Memoize the list of riders available for selection.
     const availableRiders = useMemo(() => {
         const teamIds = new Set(team.map(r => r.id));
-        return [...MOTOGP_RIDERS]
-            .sort((a, b) => b.price - a.price)
-            .filter(r => !teamIds.has(r.id));
+        return MOTOGP_RIDERS.filter(r => !teamIds.has(r.id)).sort((a, b) => b.price - a.price);
     }, [team]);
 
-    // Handles the entire process of saving the team to the league and sharing it.
-    const handleSaveAndShare = async () => {
-        const participantName = window.prompt("Introduce tu nombre de participante para la liga:");
-        if (!participantName?.trim()) {
-            if (participantName !== null) { // User clicked OK but left it empty
-                showToast('El nombre del participante no puede estar vacío.', 'error');
-            }
+    const resetSaveModal = () => {
+        setSaveModalState('closed');
+        setParticipantName('');
+        setParticipantToUpdate(null);
+    };
+
+    const handleSaveAndShareClick = () => {
+        if (team.length === TEAM_SIZE) {
+            setSaveModalState('enterName');
+        }
+    };
+
+    const handleNameSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!participantName.trim()) {
+            showToast('El nombre del participante no puede estar vacío.', 'error');
             return;
         }
 
         const trimmedName = participantName.trim();
         const existingParticipant = participants.find(p => p.name.toLowerCase() === trimmedName.toLowerCase());
 
-        let success = false;
         if (existingParticipant) {
-            const wantsToUpdate = window.confirm(`El participante '${trimmedName}' ya existe. ¿Deseas actualizar su equipo con tu selección actual?`);
-            if (wantsToUpdate) {
-                success = await onUpdateTeam(existingParticipant.id, team);
-            }
+            setParticipantToUpdate(existingParticipant);
+            setSaveModalState('confirmUpdate');
         } else {
-            success = await onAddToLeague(trimmedName, team);
+            const success = await onAddToLeague(trimmedName, team);
+            if (success) {
+                shareTeamOnWhatsapp(team);
+                clearTeam();
+                resetSaveModal();
+            }
         }
+    };
 
+    const handleConfirmUpdate = async () => {
+        if (!participantToUpdate) return;
+        const success = await onUpdateTeam(participantToUpdate.id, team);
         if (success) {
             shareTeamOnWhatsapp(team);
-            clearTeam(); 
+            clearTeam();
+            resetSaveModal();
         }
     };
     
     return (
         <div className="flex flex-col lg:flex-row gap-8">
-            {/* Rider Selection Area */}
             <div className="flex-grow pb-24 lg:pb-0">
                 <h2 className="text-3xl font-bold mb-6 border-b-2 border-red-600 pb-2">Elige tus Pilotos</h2>
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -141,13 +132,12 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                             rider={rider} 
                             onAdd={addRider} 
                             isTeamFull={isTeamFull}
-                            isAffordable={rider.price <= remainingBudget}
+                            isAffordable={rider.price <= (remainingBudget < 0 ? 0 : remainingBudget)}
                         />
                     ))}
                 </div>
             </div>
 
-            {/* Desktop Sidebar */}
             <aside className="w-full lg:w-1/3 xl:w-1/4 hidden lg:block">
                 <div className="sticky top-24">
                    <TeamSidebar 
@@ -155,21 +145,16 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                         teamTotalPrice={teamTotalPrice}
                         remainingBudget={remainingBudget}
                         onRemoveRider={removeRider}
-                        onSaveAndShare={handleSaveAndShare}
+                        onSaveAndShare={handleSaveAndShareClick}
                    />
                 </div>
             </aside>
 
-            {/* Mobile UI: Fixed Footer & Sidebar Panel */}
             <div className="lg:hidden">
-                {/* Fixed Summary Bar */}
                 <div 
                     className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t-2 border-red-600 p-3 shadow-lg z-20 flex justify-between items-center cursor-pointer"
                     onClick={() => setIsMobileSidebarOpen(true)}
                     role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && setIsMobileSidebarOpen(true)}
-                    aria-label="Abrir resumen del equipo"
                 >
                     <div>
                         <p className="font-bold text-lg">{team.length}/{TEAM_SIZE} Pilotos</p>
@@ -182,7 +167,6 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                      <span className="text-white font-bold py-2 px-4 rounded-lg bg-red-600/50">Ver Equipo</span>
                 </div>
 
-                {/* Mobile Sidebar Panel */}
                 <div 
                     className={`fixed inset-0 bg-black bg-opacity-50 z-30 transition-opacity duration-300 ${isMobileSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                     onClick={() => setIsMobileSidebarOpen(false)}
@@ -192,16 +176,11 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                     className={`fixed top-0 right-0 bottom-0 w-full max-w-sm bg-gray-900 shadow-xl z-40 transform transition-transform duration-300 ease-in-out ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}
                     role="dialog"
                     aria-modal="true"
-                    aria-labelledby="mobile-sidebar-title"
                 >
                     <div className="p-4 h-full flex flex-col">
                         <div className="flex justify-between items-center mb-4">
-                            <h2 id="mobile-sidebar-title" className="text-xl font-bold text-white">Tu Selección</h2>
-                            <button 
-                                onClick={() => setIsMobileSidebarOpen(false)} 
-                                className="p-2 text-gray-400 hover:text-white"
-                                aria-label="Cerrar el panel del equipo"
-                            >
+                            <h2 className="text-xl font-bold text-white">Tu Selección</h2>
+                            <button onClick={() => setIsMobileSidebarOpen(false)} className="p-2 text-gray-400 hover:text-white" aria-label="Cerrar">
                                 <CloseIcon className="w-6 h-6" />
                             </button>
                         </div>
@@ -212,14 +191,55 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                                 remainingBudget={remainingBudget}
                                 onRemoveRider={removeRider}
                                 onSaveAndShare={() => {
-                                    handleSaveAndShare();
-                                    setIsMobileSidebarOpen(false); // Close sidebar after action
+                                    handleSaveAndShareClick();
+                                    setIsMobileSidebarOpen(false);
                                 }}
                             />
                         </div>
                     </div>
                 </div>
             </div>
+            
+            <Modal
+                isOpen={saveModalState !== 'closed'}
+                onClose={resetSaveModal}
+                title={saveModalState === 'enterName' ? 'Guardar equipo en la liga' : `Actualizar equipo`}
+            >
+                {saveModalState === 'enterName' && (
+                    <form onSubmit={handleNameSubmit} className="space-y-4">
+                        <p className="text-gray-300">Introduce tu nombre para añadir tu equipo a la clasificación.</p>
+                        <div>
+                           <label htmlFor="participant-name" className="block text-sm font-medium text-gray-300 mb-1">Nombre del Participante</label>
+                            <input
+                                id="participant-name"
+                                type="text"
+                                value={participantName}
+                                onChange={(e) => setParticipantName(e.target.value)}
+                                className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                                required
+                                autoFocus
+                            />
+                        </div>
+                        <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                            Guardar Equipo
+                        </button>
+                    </form>
+                )}
+                {saveModalState === 'confirmUpdate' && participantToUpdate && (
+                    <div className="space-y-4 text-center">
+                        <p className="text-gray-300">El participante <strong className="text-white">{participantToUpdate.name}</strong> ya existe.</p>
+                        <p>¿Deseas actualizar su equipo con tu selección actual?</p>
+                        <div className="flex gap-4 pt-2">
+                             <button onClick={resetSaveModal} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                Cancelar
+                            </button>
+                            <button onClick={handleConfirmUpdate} className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                Sí, Actualizar
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };
