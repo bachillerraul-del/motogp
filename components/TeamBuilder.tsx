@@ -56,9 +56,9 @@ const useTeamManagement = (showToast: TeamBuilderProps['showToast']) => {
 };
 
 const shareTeamOnWhatsapp = (team: Rider[]) => {
-    const riderList = team.map((r, index) => `${index + 1}. ${r.name} (${r.team})`).join('\n');
-    const teamPrice = team.reduce((sum, rider) => sum + rider.price, 0).toFixed(2);
-    const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: €${teamPrice}m*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
+    const riderList = team.map((r, index) => `${index + 1}. ${r.name} (€${r.price.toLocaleString('es-ES')})`).join('\n');
+    const teamPrice = team.reduce((sum, rider) => sum + rider.price, 0).toLocaleString('es-ES');
+    const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: €${teamPrice}*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 };
@@ -125,7 +125,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
         <div className="flex flex-col lg:flex-row gap-8">
             <div className="flex-grow pb-24 lg:pb-0">
                 <h2 className="text-3xl font-bold mb-6 border-b-2 border-red-600 pb-2">Elige tus Pilotos</h2>
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {availableRiders.map(rider => (
                         <RiderCard 
                             key={rider.id} 
@@ -160,7 +160,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
                         <p className="font-bold text-lg">{team.length}/{TEAM_SIZE} Pilotos</p>
                         <p className="text-sm text-gray-400">Restante: 
                             <span className={`font-mono font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>
-                                €{remainingBudget.toFixed(2)}m
+                                €{remainingBudget.toLocaleString('es-ES')}
                             </span>
                         </p>
                     </div>

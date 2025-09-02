@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { Rider } from '../types';
 import { PlusIcon } from './Icons';
@@ -10,21 +9,7 @@ interface RiderCardProps {
     isAffordable: boolean;
 }
 
-const formatPrice = (price: number): string => `€${price.toFixed(2)}m`;
-
-const formatPriceChange = (change: number): React.ReactNode => {
-    if (change === 0) return null;
-    const sign = change > 0 ? '+' : '';
-    const color = change > 0 ? 'text-green-400' : 'text-red-400';
-    return <span className={`ml-2 text-sm ${color}`}>({sign}${change}K)</span>;
-};
-
-const StatItem: React.FC<{ label: string; value: string | number }> = ({ label, value }) => (
-    <div className="flex flex-col">
-        <span className="text-xs text-gray-400 uppercase tracking-wider">{label}</span>
-        <span className="text-xl font-bold text-white">{value}</span>
-    </div>
-);
+const formatPrice = (price: number): string => `€${price.toLocaleString('es-ES')}`;
 
 const renderCondition = (condition?: string) => {
     if (!condition) return null;
@@ -39,7 +24,6 @@ const renderCondition = (condition?: string) => {
     }
     return null;
 }
-
 
 export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable }) => {
     const isSelectable = !rider.condition?.includes('unavailable') && !rider.condition?.includes('injured');
@@ -61,18 +45,9 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
                     </div>
                     <div className="text-right flex-shrink-0">
                         <p className="text-lg font-semibold text-white">{formatPrice(rider.price)}</p>
-                        <p>{formatPriceChange(rider.priceChange)}</p>
                     </div>
                 </div>
                 {renderCondition(rider.condition)}
-
-                <div className="grid grid-cols-2 gap-4 my-4 text-center bg-gray-900/50 p-3 rounded-md">
-                    <StatItem label="Podios" value={rider.totalPodiums} />
-                    <div>
-                         <span className="text-xs text-gray-400 uppercase tracking-wider">Últimas 3</span>
-                         <p className="text-xl font-bold text-white">{rider.last3Races.join(' - ')}</p>
-                    </div>
-                </div>
             </div>
             <button
                 onClick={() => onAdd(rider)}
