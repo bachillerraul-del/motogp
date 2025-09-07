@@ -7,6 +7,7 @@ import { Toast } from './components/Toast';
 import { Modal } from './components/Modal';
 import { supabase } from './lib/supabaseClient';
 import type { Participant, Rider, Round, TeamSnapshot, LeagueSettings } from './types';
+import { MOTOGP_RIDERS } from './constants';
 
 type View = 'builder' | 'results';
 
@@ -16,6 +17,7 @@ const App: React.FC = () => {
     const [rounds, setRounds] = useState<Round[]>([]);
     const [teamSnapshots, setTeamSnapshots] = useState<TeamSnapshot[]>([]);
     const [leagueSettings, setLeagueSettings] = useState<LeagueSettings | null>(null);
+    const [riders, setRiders] = useState<Rider[]>(MOTOGP_RIDERS);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
     
@@ -258,6 +260,15 @@ const App: React.FC = () => {
         }
     };
 
+    const handleUpdateRider = (updatedRider: Rider) => {
+        setRiders(prevRiders =>
+            prevRiders.map(rider =>
+                rider.id === updatedRider.id ? updatedRider : rider
+            )
+        );
+        showToast(`Piloto ${updatedRider.name} actualizado.`, 'success');
+    };
+
 
     if (loading) {
         return (
@@ -284,6 +295,7 @@ const App: React.FC = () => {
             <main className="container mx-auto p-4 md:p-8">
                 {view === 'builder' && (
                     <TeamBuilder 
+                        riders={riders}
                         participants={participants}
                         onAddToLeague={addParticipantToLeague}
                         onUpdateTeam={handleUpdateParticipantTeam}
@@ -297,12 +309,14 @@ const App: React.FC = () => {
                         rounds={rounds}
                         teamSnapshots={teamSnapshots}
                         leagueSettings={leagueSettings}
+                        riders={riders}
                         isAdmin={isAdmin}
                         onUpdateParticipant={handleUpdateParticipant}
                         onDeleteParticipant={handleDeleteParticipant}
                         onAddRound={handleAddRound}
                         onUpdateRound={handleUpdateRound}
                         onUpdateMarketDeadline={handleUpdateMarketDeadline}
+                        onUpdateRider={handleUpdateRider}
                         showToast={showToast}
                     />
                 )}

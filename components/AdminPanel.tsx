@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Rider, Round, LeagueSettings } from '../types';
-import { PlusIcon } from './Icons';
+import { PlusIcon, PencilIcon } from './Icons';
+import { Modal } from './Modal';
 
 type AllRiderPoints = Record<number, Record<number, number>>;
 
@@ -16,6 +17,7 @@ interface AdminPanelProps {
     onPointChange: (riderId: number, points: string) => Promise<void>;
     leagueSettings: LeagueSettings | null;
     onUpdateMarketDeadline: (deadline: string | null) => Promise<void>;
+    onUpdateRider: (rider: Rider) => void;
     showToast: (message: string, type: 'success' | 'error') => void;
 }
 
@@ -32,12 +34,14 @@ const formatDatetimeLocal = (dateStr: string | null | undefined): string => {
 export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
         rounds, onAddRound, selectedRound, onSelectRound, onUpdateRound, onClearPoints,
-        riders, riderPoints, onPointChange, leagueSettings, onUpdateMarketDeadline, showToast
+        riders, riderPoints, onPointChange, leagueSettings, onUpdateMarketDeadline, onUpdateRider, showToast
     } = props;
 
     const [newRoundName, setNewRoundName] = useState('');
     const [editedRoundDate, setEditedRoundDate] = useState('');
     const [marketDeadline, setMarketDeadline] = useState('');
+    const [editingRider, setEditingRider] = useState<Rider | null>(null);
+    const [riderFormData, setRiderFormData] = useState<Rider | null>(null);
 
     useEffect(() => {
         setEditedRoundDate(formatDatetimeLocal(selectedRound?.round_date));
@@ -46,6 +50,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     useEffect(() => {
         setMarketDeadline(formatDatetimeLocal(leagueSettings?.market_deadline));
     }, [leagueSettings]);
+
+    useEffect(() => {
+        if (editingRider) {
+            setRiderFormData(editingRider);
+        } else {
+            setRiderFormData(null);
+        }
+    }, [editingRider]);
 
     const handleAddNewRound = () => {
         if (newRoundName.trim() === '') {
@@ -67,6 +79,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         onUpdateMarketDeadline(newDeadline);
     };
 
+    const handleRiderFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        if (!riderFormData) return;
+        const { name, value } = e.target;
+
+        if (name === 'condition') {
+            setRiderFormData({
+                ...riderFormData,
+                condition: value === '' ? undefined : value,
+            });
+        } else {
+            setRiderFormData({
+                ...riderFormData,
+                [name]: name === 'price' ? parseInt(value, 10) || 0 : value,
+            });
+        }
+    };
+
+    const handleSaveRider = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (riderFormData) {
+            onUpdateRider(riderFormData);
+            setEditingRider(null);
+        }
+    };
+
     const currentRiderPoints = selectedRound ? riderPoints[selectedRound.id] || {} : {};
 
     return (
@@ -85,6 +122,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             onBlur={handleDeadlineChange}
                             className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
                         />
+                    </div>
+                </div>
+
+                {/* Rider Editor */}
+                <div className="border-t border-gray-700 pt-4">
+                    <h2 className="text-xl font-bold mb-2">Editar Pilotos</h2>
+                    <div className="max-h-[25vh] overflow-y-auto pr-2 space-y-2">
+                        {riders.map(rider => (
+                            <div key={rider.id} className="bg-gray-900/50 p-2 rounded-md flex justify-between items-center">
+                                <div>
+                                    <p className="font-semibold">{rider.name}</p>
+                                    <p className="text-xs text-gray-400">€{rider.price.toLocaleString('es-ES')}</p>
+                                </div>
+                                <button onClick={() => setEditingRider(rider)} className="p-2 text-gray-400 hover:text-white transition-colors">
+                                    <PencilIcon className="w-5 h-5"/>
+                                </button>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
@@ -138,25 +193,69 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     )}
 
                     <div className="max-h-[45vh] overflow-y-auto pr-2 mt-4">
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                             {riders.map(rider => (
-                                <div key={rider.id} className="flex items-center justify-between text-sm">
-                                    <label htmlFor={`rider-${rider.id}`} className="flex-grow mr-2 truncate">{rider.name}</label>
-                                    <input
-                                        id={`rider-${rider.id}`}
-                                        type="number"
-                                        value={currentRiderPoints[rider.id] || ''}
-                                        onChange={(e) => onPointChange(rider.id, e.target.value)}
-                                        className="w-20 bg-gray-900 text-white p-1 rounded-md text-right focus:outline-none focus:ring-2 focus:ring-red-500"
-                                        placeholder="0"
-                                        disabled={!selectedRound}
-                                    />
+                                <div key={rider.id} className="bg-gray-900/50 p-2 rounded-md">
+                                    <label htmlFor={`rider-points-${rider.id}`} className="block text-sm font-semibold mb-1 truncate">{rider.name}</label>
+                                     <div className="flex items-center gap-2">
+                                        <label htmlFor={`rider-points-${rider.id}`} className="text-gray-400">Puntos:</label>
+                                        <input
+                                            id={`rider-points-${rider.id}`}
+                                            type="number"
+                                            value={currentRiderPoints[rider.id] || ''}
+                                            onChange={(e) => onPointChange(rider.id, e.target.value)}
+                                            className="w-full bg-gray-700 text-white p-1 rounded-md text-right focus:outline-none focus:ring-2 focus:ring-red-500"
+                                            placeholder="0"
+                                            disabled={!selectedRound}
+                                        />
+                                    </div>
                                 </div>
                             ))}
                         </div>
                     </div>
                 </div>
             </div>
+            
+            <Modal isOpen={!!editingRider} onClose={() => setEditingRider(null)} title={`Editar ${editingRider?.name}`}>
+                {riderFormData && (
+                    <form onSubmit={handleSaveRider} className="space-y-4">
+                         <div>
+                            <label htmlFor="rider-name" className="block text-sm font-medium text-gray-300 mb-1">Nombre</label>
+                            <input id="rider-name" name="name" type="text" value={riderFormData.name} onChange={handleRiderFormChange} className="w-full bg-gray-900 text-white p-2 rounded-md"/>
+                        </div>
+                        <div>
+                            <label htmlFor="rider-team" className="block text-sm font-medium text-gray-300 mb-1">Equipo</label>
+                            <input id="rider-team" name="team" type="text" value={riderFormData.team} onChange={handleRiderFormChange} className="w-full bg-gray-900 text-white p-2 rounded-md"/>
+                        </div>
+                         <div>
+                            <label htmlFor="rider-bike" className="block text-sm font-medium text-gray-300 mb-1">Moto</label>
+                            <input id="rider-bike" name="bike" type="text" value={riderFormData.bike} onChange={handleRiderFormChange} className="w-full bg-gray-900 text-white p-2 rounded-md"/>
+                        </div>
+                        <div>
+                            <label htmlFor="rider-price" className="block text-sm font-medium text-gray-300 mb-1">Precio</label>
+                            <input id="rider-price" name="price" type="number" value={riderFormData.price} onChange={handleRiderFormChange} className="w-full bg-gray-900 text-white p-2 rounded-md"/>
+                        </div>
+                        <div>
+                            <label htmlFor="rider-condition" className="block text-sm font-medium text-gray-300 mb-1">Estado</label>
+                            <select
+                                id="rider-condition"
+                                name="condition"
+                                value={riderFormData.condition || ''}
+                                onChange={handleRiderFormChange}
+                                className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                            >
+                                <option value="">Disponible</option>
+                                <option value="Rider is injured">Lesionado</option>
+                                <option value="Rider is unavailable">No Disponible</option>
+                            </select>
+                        </div>
+                        <div className="flex justify-end gap-3 pt-2">
+                             <button type="button" onClick={() => setEditingRider(null)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                             <button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Guardar Cambios</button>
+                        </div>
+                    </form>
+                )}
+            </Modal>
         </aside>
     );
 };

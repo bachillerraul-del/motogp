@@ -1,26 +1,88 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { Rider, Participant, Round, TeamSnapshot, LeagueSettings } from '../types';
-import { MOTOGP_RIDERS } from '../constants';
 import { supabase } from '../lib/supabaseClient';
 import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
 import { Leaderboard } from './Leaderboard';
+import { RiderLeaderboard } from './RiderLeaderboard';
+import { TrophyIcon } from './Icons';
+
+// Type definitions
+type RiderRoundPoints = number;
+type AllRiderPoints = Record<number, Record<number, RiderRoundPoints>>;
+type RiderWithScore = Rider & { score: number };
+
+// Modal for rider point details
+interface RiderDetailModalProps {
+    rider: RiderWithScore | null;
+    rounds: Round[];
+    allRiderPoints: AllRiderPoints;
+    onClose: () => void;
+}
+
+const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, rounds, allRiderPoints, onClose }) => {
+    if (!rider) return null;
+
+    const sortedRounds = [...rounds].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    const riderHasPoints = sortedRounds.some(round => {
+        const points = allRiderPoints[round.id]?.[rider.id];
+        return points && points > 0;
+    });
+
+    return (
+        <Modal isOpen={!!rider} onClose={onClose} title={`Desglose de Puntos: ${rider.name}`}>
+            <div className="space-y-4">
+                <div className="flex justify-between items-center bg-gray-900/50 p-3 rounded-lg">
+                    <div>
+                        <p className="text-lg font-bold text-white">{rider.name}</p>
+                        <p className="text-sm text-gray-400">{rider.team}</p>
+                    </div>
+                    <div className="flex items-center gap-2 bg-yellow-400/10 text-yellow-300 font-bold px-4 py-2 rounded-full text-lg">
+                        <TrophyIcon className="w-6 h-6"/>
+                        <span>{rider.score} pts</span>
+                    </div>
+                </div>
+
+                <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-3">
+                    <h3 className="text-md font-semibold text-gray-300 uppercase tracking-wider border-b border-gray-700 pb-2">Puntos por Jornada</h3>
+                    {riderHasPoints ? (
+                        sortedRounds.map(round => {
+                            const points = allRiderPoints[round.id]?.[rider.id] || 0;
+
+                            if (points === 0) return null;
+
+                            return (
+                                <div key={round.id} className="bg-gray-700/50 p-3 rounded-md flex justify-between items-center">
+                                    <p className="font-semibold text-white">{round.name}</p>
+                                    <p className="font-bold text-lg text-yellow-300">{points} pts</p>
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <p className="text-center text-gray-500 py-4">Este piloto aún no ha conseguido puntos.</p>
+                    )}
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 
 interface ResultsProps {
     participants: Participant[];
     rounds: Round[];
     teamSnapshots: TeamSnapshot[];
     leagueSettings: LeagueSettings | null;
+    riders: Rider[];
     isAdmin: boolean;
     onUpdateParticipant: (participant: Participant) => Promise<void>;
     onDeleteParticipant: (participantId: number) => Promise<void>;
     onAddRound: (roundName: string) => Promise<void>;
     onUpdateRound: (round: Round) => Promise<void>;
     onUpdateMarketDeadline: (deadline: string | null) => Promise<void>;
+    onUpdateRider: (rider: Rider) => void;
     showToast: (message: string, type: 'success' | 'error') => void;
 }
-
-type AllRiderPoints = Record<number, Record<number, number>>;
 
 const getTeamForRound = (participantId: number, roundDate: string | null, snapshots: TeamSnapshot[]): number[] => {
     if (!roundDate) return [];
@@ -34,14 +96,15 @@ const getTeamForRound = (participantId: number, roundDate: string | null, snapsh
 
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
-        participants, rounds, teamSnapshots, leagueSettings, isAdmin, 
-        onUpdateParticipant, onDeleteParticipant, onAddRound, onUpdateRound, onUpdateMarketDeadline, 
+        participants, rounds, teamSnapshots, leagueSettings, riders, isAdmin, 
+        onUpdateParticipant, onDeleteParticipant, onAddRound, onUpdateRound, onUpdateMarketDeadline, onUpdateRider,
         showToast 
     } = props;
     
     const [allRiderPoints, setAllRiderPoints] = useState<AllRiderPoints>({});
     const [selectedRoundForEditing, setSelectedRoundForEditing] = useState<Round | null>(null);
     const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
+    const [selectedRiderDetails, setSelectedRiderDetails] = useState<RiderWithScore | null>(null);
     const defaultViewIsSet = useRef(false);
     
     // Modal States
@@ -49,19 +112,13 @@ export const Results: React.FC<ResultsProps> = (props) => {
     const [isConfirmingClearPoints, setIsConfirmingClearPoints] = useState(false);
 
     useEffect(() => {
-        // This effect sets the default view to the latest round *only once* when rounds are available.
-        // It won't override the user's selection later.
         if (rounds.length > 0 && !defaultViewIsSet.current) {
             const latestRound = [...rounds].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-            
             setLeaderboardView(latestRound.id);
-            
-            // Also set the default round for the admin panel if it's not already set
             if (!selectedRoundForEditing) {
                 setSelectedRoundForEditing(latestRound);
             }
-            
-            defaultViewIsSet.current = true; // Mark as set to prevent this from running again
+            defaultViewIsSet.current = true;
         }
     }, [rounds, selectedRoundForEditing]);
 
@@ -73,7 +130,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
             } else if (data) {
                 const pointsMap = data.reduce((acc, item) => {
                     if (!acc[item.round_id]) acc[item.round_id] = {};
-                    acc[item.round_id][item.rider_id] = item.points;
+                    acc[item.round_id][item.rider_id] = item.points || 0;
                     return acc;
                 }, {} as AllRiderPoints);
                 setAllRiderPoints(pointsMap);
@@ -90,8 +147,20 @@ export const Results: React.FC<ResultsProps> = (props) => {
         const finalPoints = pointsStr === '' ? 0 : parseInt(pointsStr, 10);
         if (isNaN(finalPoints)) return;
 
-        setAllRiderPoints(prev => ({ ...prev, [selectedRoundForEditing.id]: { ...prev[selectedRoundForEditing.id], [riderId]: finalPoints }}));
-        const { error } = await supabase.from('rider_points').upsert({ round_id: selectedRoundForEditing.id, rider_id: riderId, points: finalPoints });
+        setAllRiderPoints(prev => ({
+            ...prev,
+            [selectedRoundForEditing.id]: {
+                ...prev[selectedRoundForEditing.id],
+                [riderId]: finalPoints
+            },
+        }));
+
+        const { error } = await supabase.from('rider_points').upsert({
+            round_id: selectedRoundForEditing.id,
+            rider_id: riderId,
+            points: finalPoints
+        });
+
         if (error) {
             console.error('Error upserting rider points:', error);
             showToast('Error al guardar los puntos.', 'error');
@@ -118,19 +187,20 @@ export const Results: React.FC<ResultsProps> = (props) => {
     };
 
     const calculateScore = useCallback((participant: Participant): number => {
-        if (leaderboardView === 'general') {
-            return rounds.reduce((totalScore, round) => {
-                const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
-                const roundPointsMap = allRiderPoints[round.id] || {};
-                const roundScore = teamForRound.reduce((acc, riderId) => acc + (roundPointsMap[riderId] || 0), 0);
-                return totalScore + roundScore;
+        const calculateRoundScore = (round: Round) => {
+            const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
+            const roundPointsMap = allRiderPoints[round.id] || {};
+            return teamForRound.reduce((acc, riderId) => {
+                const points = roundPointsMap[riderId] || 0;
+                return acc + points;
             }, 0);
+        };
+
+        if (leaderboardView === 'general') {
+            return rounds.reduce((totalScore, round) => totalScore + calculateRoundScore(round), 0);
         } else {
             const round = rounds.find(r => r.id === leaderboardView);
-            if (!round) return 0;
-            const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
-            const roundPointsMap = allRiderPoints[leaderboardView] || {};
-            return teamForRound.reduce((acc, riderId) => acc + (roundPointsMap[riderId] || 0), 0);
+            return round ? calculateRoundScore(round) : 0;
         }
     }, [leaderboardView, rounds, teamSnapshots, allRiderPoints]);
 
@@ -140,6 +210,24 @@ export const Results: React.FC<ResultsProps> = (props) => {
             score: calculateScore(p)
         })).sort((a, b) => b.score - a.score);
     }, [participants, calculateScore]);
+
+    const sortedRiders = useMemo(() => {
+        const riderScores: Record<number, number> = {};
+        Object.values(allRiderPoints).forEach(roundPoints => {
+            Object.entries(roundPoints).forEach(([riderId, points]) => {
+                const id = parseInt(riderId, 10);
+                riderScores[id] = (riderScores[id] || 0) + points;
+            });
+        });
+
+        return riders
+            .map(rider => ({
+                ...rider,
+                score: riderScores[rider.id] || 0
+            }))
+            .sort((a, b) => b.score - a.score);
+
+    }, [allRiderPoints, riders]);
 
     return (
         <div className="flex flex-col lg:flex-row gap-8">
@@ -151,11 +239,12 @@ export const Results: React.FC<ResultsProps> = (props) => {
                     onSelectRound={setSelectedRoundForEditing}
                     onUpdateRound={onUpdateRound}
                     onClearPoints={() => setIsConfirmingClearPoints(true)}
-                    riders={MOTOGP_RIDERS}
+                    riders={riders}
                     riderPoints={allRiderPoints}
                     onPointChange={handlePointChange}
                     leagueSettings={leagueSettings}
                     onUpdateMarketDeadline={onUpdateMarketDeadline}
+                    onUpdateRider={onUpdateRider}
                     showToast={showToast}
                 />
             )}
@@ -170,6 +259,16 @@ export const Results: React.FC<ResultsProps> = (props) => {
                 onUpdateParticipant={onUpdateParticipant}
                 allRiderPoints={allRiderPoints}
                 teamSnapshots={teamSnapshots}
+                riders={riders}
+            />
+
+            <RiderLeaderboard riders={sortedRiders} onRiderClick={setSelectedRiderDetails} />
+            
+            <RiderDetailModal 
+                rider={selectedRiderDetails}
+                rounds={rounds}
+                allRiderPoints={allRiderPoints}
+                onClose={() => setSelectedRiderDetails(null)}
             />
 
             <Modal

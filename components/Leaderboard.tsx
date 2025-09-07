@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Rider, Participant, Round, TeamSnapshot } from '../types';
-import { MOTOGP_RIDERS, TEAM_SIZE } from '../constants';
+import { TEAM_SIZE } from '../constants';
 import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon } from './Icons';
 
 type AllRiderPoints = Record<number, Record<number, number>>;
@@ -18,12 +18,8 @@ interface LeaderboardProps {
     onUpdateParticipant: (participant: Participant) => Promise<void>;
     allRiderPoints: AllRiderPoints;
     teamSnapshots: TeamSnapshot[];
+    riders: Rider[];
 }
-
-const ridersById = MOTOGP_RIDERS.reduce((acc, rider) => {
-    acc[rider.id] = rider;
-    return acc;
-}, {} as Record<number, Rider>);
 
 const getTeamForRound = (participantId: number, roundDate: string | null, snapshots: TeamSnapshot[]): number[] => {
     if (!roundDate) return [];
@@ -45,8 +41,17 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
     onUpdateParticipant,
     allRiderPoints,
     teamSnapshots,
+    riders,
 }) => {
     const [editingName, setEditingName] = useState<{ id: number; name: string } | null>(null);
+
+    const ridersById = useMemo(() => {
+        return riders.reduce((acc, rider) => {
+            acc[rider.id] = rider;
+            return acc;
+        }, {} as Record<number, Rider>);
+    }, [riders]);
+
 
     const handleSaveName = (participantId: number) => {
         if (!editingName || editingName.name.trim() === '') return;
@@ -146,7 +151,10 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                                 {rounds.map(round => {
                                                     const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
                                                     const roundPointsMap = allRiderPoints[round.id] || {};
-                                                    const roundScore = teamForRound.reduce((acc, riderId) => acc + (roundPointsMap[riderId] || 0), 0);
+                                                    const roundScore = teamForRound.reduce((acc, riderId) => {
+                                                        const points = roundPointsMap[riderId] || 0;
+                                                        return acc + points;
+                                                    }, 0);
                                                     return (
                                                         <li key={round.id} className="flex justify-between items-baseline">
                                                             <span className="truncate text-gray-300 mr-2">{round.name}:</span>
@@ -166,19 +174,25 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                             if (!round) return <p className="text-gray-500 text-sm">Jornada no encontrada.</p>;
                                             const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
                                             const roundPointsMap = allRiderPoints[leaderboardView] || {};
+                                            
+                                            const sortedTeam = [...teamForRound].sort((a, b) => {
+                                                const pointsA = roundPointsMap[a] || 0;
+                                                const pointsB = roundPointsMap[b] || 0;
+                                                return pointsB - pointsA;
+                                            });
 
                                             return (
                                                 <>
                                                     <p className="text-xs text-gray-400 mb-2 uppercase">Equipo para {round.name} ({teamForRound.length}/{TEAM_SIZE})</p>
-                                                    {teamForRound.length > 0 ? (
+                                                    {sortedTeam.length > 0 ? (
                                                         <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 text-sm">
-                                                            {teamForRound.map(riderId => {
+                                                            {sortedTeam.map(riderId => {
                                                                 const riderPoints = roundPointsMap[riderId] || 0;
                                                                 const rider = ridersById[riderId];
                                                                 return (
-                                                                    <li key={riderId} className="bg-gray-700 p-1.5 rounded-md text-center">
-                                                                        <p className="truncate font-semibold">{rider?.name ?? 'N/A'}</p>
-                                                                        <p className="text-yellow-300 font-bold">{riderPoints} pts</p>
+                                                                    <li key={riderId} className="bg-gray-700 p-1.5 rounded-md text-center flex flex-col justify-between">
+                                                                        <p className="truncate font-semibold text-xs leading-tight">{rider?.name ?? 'N/A'}</p>
+                                                                        <p className="text-yellow-300 font-bold mt-1">{riderPoints} pts</p>
                                                                     </li>
                                                                 );
                                                             })}

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Rider, Participant } from '../types';
-import { MOTOGP_RIDERS, TEAM_SIZE, BUDGET } from '../constants';
+import { TEAM_SIZE, BUDGET } from '../constants';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
 import { CloseIcon } from './Icons';
@@ -8,6 +8,7 @@ import { Modal } from './Modal';
 import { Countdown } from './Countdown';
 
 interface TeamBuilderProps {
+    riders: Rider[];
     participants: Participant[];
     onAddToLeague: (name: string, team: Rider[]) => Promise<boolean>;
     onUpdateTeam: (participantId: number, team: Rider[]) => Promise<boolean>;
@@ -74,7 +75,7 @@ const calculateTimeRemaining = (deadline: Date) => {
     return { days, hours, minutes, seconds };
 };
 
-export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToLeague, onUpdateTeam, showToast, marketDeadline }) => {
+export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, onAddToLeague, onUpdateTeam, showToast, marketDeadline }) => {
     const { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull } = useTeamManagement(showToast);
     
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -130,7 +131,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
 
     const availableRiders = useMemo(() => {
         const teamIds = new Set(team.map(r => r.id));
-        const filteredRiders = MOTOGP_RIDERS.filter(r => !teamIds.has(r.id));
+        const filteredRiders = riders.filter(r => !teamIds.has(r.id));
 
         const available = [];
         const unavailable = [];
@@ -146,7 +147,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ participants, onAddToL
         available.sort((a, b) => b.price - a.price);
 
         return [...available, ...unavailable];
-    }, [team]);
+    }, [team, riders]);
 
     const resetSaveModal = () => {
         setSaveModalState('closed');
