@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import type { Rider, Round, LeagueSettings } from '../types';
-import { PlusIcon, PencilIcon } from './Icons';
+import type { Rider, Round, LeagueSettings, Participant, TeamSnapshot } from '../types';
+import { PlusIcon, PencilIcon, SparklesIcon, MagnifyingGlassIcon } from './Icons';
 import { Modal } from './Modal';
+import { suggestRiderPriceChanges, fetchRaceResultsFromAI, AISuggestion } from '../services/geminiService';
 
 type AllRiderPoints = Record<number, Record<number, number>>;
 
@@ -19,6 +20,8 @@ interface AdminPanelProps {
     onUpdateMarketDeadline: (deadline: string | null) => Promise<void>;
     onUpdateRider: (rider: Rider) => void;
     showToast: (message: string, type: 'success' | 'error') => void;
+    participants: Participant[];
+    teamSnapshots: TeamSnapshot[];
 }
 
 const formatDatetimeLocal = (dateStr: string | null | undefined): string => {
@@ -34,7 +37,8 @@ const formatDatetimeLocal = (dateStr: string | null | undefined): string => {
 export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
         rounds, onAddRound, selectedRound, onSelectRound, onUpdateRound, onClearPoints,
-        riders, riderPoints, onPointChange, leagueSettings, onUpdateMarketDeadline, onUpdateRider, showToast
+        riders, riderPoints, onPointChange, leagueSettings, onUpdateMarketDeadline, onUpdateRider, showToast,
+        participants, teamSnapshots
     } = props;
 
     const [newRoundName, setNewRoundName] = useState('');
@@ -43,6 +47,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const [editingRider, setEditingRider] = useState<Rider | null>(null);
     const [riderFormData, setRiderFormData] = useState<Rider | null>(null);
 
+    // AI Price Suggestion State
+    const [isSuggestingPrices, setIsSuggestingPrices] = useState(false);
+    const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
+    const [isSuggestionModalOpen, setIsSuggestionModalOpen] = useState(false);
+    const [aiRoundId, setAiRoundId] = useState<string>('');
+    const [isFetchingPoints, setIsFetchingPoints] = useState(false);
+
+
     useEffect(() => {
         setEditedRoundDate(formatDatetimeLocal(selectedRound?.round_date));
     }, [selectedRound]);
@@ -50,6 +62,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     useEffect(() => {
         setMarketDeadline(formatDatetimeLocal(leagueSettings?.market_deadline));
     }, [leagueSettings]);
+    
+    useEffect(() => {
+        if (rounds.length > 0 && !aiRoundId) {
+            const latestRound = [...rounds].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+            setAiRoundId(String(latestRound.id));
+        }
+    }, [rounds, aiRoundId]);
 
     useEffect(() => {
         if (editingRider) {
@@ -104,6 +123,105 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         }
     };
 
+    const handleSuggestPrices = async () => {
+        if (!aiRoundId) {
+            showToast('Por favor, selecciona una jornada para analizar.', 'error');
+            return;
+        }
+        const roundToEvaluate = rounds.find(r => r.id === Number(aiRoundId));
+        if (!roundToEvaluate) {
+            showToast('La jornada seleccionada no es válida.', 'error');
+            return;
+        }
+
+        setIsSuggestingPrices(true);
+        try {
+            const suggestions = await suggestRiderPriceChanges(
+                riders,
+                participants,
+                teamSnapshots,
+                roundToEvaluate,
+                riderPoints
+            );
+            if (suggestions && suggestions.length > 0) {
+                setAiSuggestions(suggestions);
+                setIsSuggestionModalOpen(true);
+            } else {
+                showToast('La IA no ha sugerido cambios de precios para esta jornada.', 'success');
+            }
+        } catch (error) {
+            console.error("Error getting AI suggestions:", error);
+            showToast('No se pudieron obtener las sugerencias de la IA.', 'error');
+        } finally {
+            setIsSuggestingPrices(false);
+        }
+    };
+
+    const handleApplySuggestions = () => {
+        aiSuggestions.forEach(suggestion => {
+            const riderToUpdate = riders.find(r => r.id === suggestion.riderId);
+            if (riderToUpdate) {
+                onUpdateRider({ ...riderToUpdate, price: suggestion.newPrice });
+            }
+        });
+        setIsSuggestionModalOpen(false);
+        setAiSuggestions([]);
+        showToast('Precios de los pilotos actualizados con las sugerencias de la IA.', 'success');
+    };
+    
+    const normalizeString = (str: string) => 
+        str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    const handleFetchPointsWithAI = async () => {
+        if (!selectedRound) {
+            showToast('Por favor, selecciona una jornada para buscar los puntos.', 'error');
+            return;
+        }
+        setIsFetchingPoints(true);
+        try {
+            const riderNames = riders.map(r => r.name);
+            const currentYear = new Date().getFullYear();
+            const aiResults = await fetchRaceResultsFromAI(selectedRound.name, riderNames, currentYear);
+            
+            if (!aiResults || aiResults.length === 0) {
+                showToast('La IA no devolvió resultados para esta jornada.', 'success');
+                return;
+            }
+
+            let updatedCount = 0;
+            const notFoundNames: string[] = [];
+            
+            const riderNameMap = new Map(riders.map(r => [normalizeString(r.name), r]));
+
+            const updates = aiResults.map(result => {
+                const normalizedName = normalizeString(result.riderName);
+                const rider = riderNameMap.get(normalizedName);
+                if (rider) {
+                    updatedCount++;
+                    return onPointChange(rider.id, String(result.points));
+                } else {
+                    notFoundNames.push(result.riderName);
+                    return Promise.resolve();
+                }
+            });
+            
+            await Promise.all(updates);
+
+            let message = `IA actualizó los puntos de ${updatedCount} pilotos.`;
+            if (notFoundNames.length > 0) {
+                message += ` No se encontraron: ${notFoundNames.join(', ')}.`;
+            }
+            showToast(message, updatedCount > 0 ? 'success' : 'error');
+
+        } catch (error) {
+            console.error("Error fetching points from AI:", error);
+            showToast('Error al buscar puntos con la IA.', 'error');
+        } finally {
+            setIsFetchingPoints(false);
+        }
+    };
+
+
     const currentRiderPoints = selectedRound ? riderPoints[selectedRound.id] || {} : {};
 
     return (
@@ -122,6 +240,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             onBlur={handleDeadlineChange}
                             className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
                         />
+                    </div>
+                    <div className="mt-4">
+                        <h3 className="text-md font-semibold text-gray-300 mb-1">Sugerencias de Precios con IA</h3>
+                        <div className="flex gap-2">
+                             <select
+                                value={aiRoundId}
+                                onChange={(e) => setAiRoundId(e.target.value)}
+                                className="flex-grow bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                disabled={rounds.length === 0}
+                                aria-label="Seleccionar jornada para análisis de IA"
+                            >
+                                <option value="" disabled>{rounds.length === 0 ? 'Crea una jornada' : 'Seleccionar...'}</option>
+                                {rounds.map(round => <option key={round.id} value={round.id}>{round.name}</option>)}
+                            </select>
+                            <button
+                                onClick={handleSuggestPrices}
+                                disabled={isSuggestingPrices || !aiRoundId}
+                                className="flex-shrink-0 flex items-center justify-center bg-purple-600 text-white font-bold p-2 rounded-lg transition-colors duration-300 hover:bg-purple-700 disabled:bg-gray-600"
+                                title="Sugerir precios con IA"
+                            >
+                                <SparklesIcon className="w-5 h-5" />
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -161,9 +302,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
                 {/* Points Editor */}
                 <div className="border-t border-gray-700 pt-4">
-                    <div className="flex justify-between items-center mb-2">
+                     <div className="flex justify-between items-center mb-2">
                         <h2 className="text-xl font-bold">Editar Puntos</h2>
-                        <button onClick={onClearPoints} disabled={!selectedRound} className="text-sm text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Limpiar Puntos</button>
+                        <div className="flex items-center gap-2">
+                            <button 
+                                onClick={handleFetchPointsWithAI} 
+                                disabled={!selectedRound || isFetchingPoints} 
+                                className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isFetchingPoints ? (
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    <MagnifyingGlassIcon className="w-4 h-4" />
+                                )}
+                                <span>{isFetchingPoints ? 'Buscando...' : 'Buscar Puntos'}</span>
+                            </button>
+                            <button onClick={onClearPoints} disabled={!selectedRound} className="text-sm text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Limpiar</button>
+                        </div>
                     </div>
                     <select
                         value={selectedRound?.id ?? ''}
@@ -255,6 +413,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         </div>
                     </form>
                 )}
+            </Modal>
+
+            <Modal isOpen={isSuggestionModalOpen} onClose={() => setIsSuggestionModalOpen(false)} title="Sugerencias de Precios por IA">
+                 <div className="space-y-4">
+                    <p className="text-gray-300">La IA ha analizado el rendimiento de la última jornada y sugiere los siguientes cambios:</p>
+                    <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-3">
+                        {aiSuggestions.map(suggestion => {
+                            const rider = riders.find(r => r.id === suggestion.riderId);
+                            if (!rider) return null;
+                            const priceChange = suggestion.newPrice - rider.price;
+                            return (
+                                <div key={suggestion.riderId} className="bg-gray-900/50 p-3 rounded-lg">
+                                    <div className="flex justify-between items-start">
+                                        <h4 className="font-bold text-white text-lg">{rider.name}</h4>
+                                        <div className="text-right">
+                                            <p className="font-mono text-gray-400 line-through">€{rider.price.toLocaleString('es-ES')}</p>
+                                            <p className={`font-mono font-bold text-xl ${priceChange > 0 ? 'text-green-400' : 'text-red-500'}`}>
+                                                €{suggestion.newPrice.toLocaleString('es-ES')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-gray-400 mt-2 italic">"{suggestion.reasoning}"</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                     <div className="flex gap-4 pt-4">
+                        <button onClick={() => setIsSuggestionModalOpen(false)} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                        <button onClick={handleApplySuggestions} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">Aplicar Cambios</button>
+                    </div>
+                 </div>
             </Modal>
         </aside>
     );

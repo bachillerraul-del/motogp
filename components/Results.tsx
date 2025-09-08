@@ -212,6 +212,13 @@ export const Results: React.FC<ResultsProps> = (props) => {
     }, [participants, calculateScore]);
 
     const sortedRiders = useMemo(() => {
+        const activeRiderIds = new Set<number>();
+        participants.forEach(p => {
+            p.team_ids.forEach(riderId => {
+                activeRiderIds.add(riderId);
+            });
+        });
+
         const riderScores: Record<number, number> = {};
         Object.values(allRiderPoints).forEach(roundPoints => {
             Object.entries(roundPoints).forEach(([riderId, points]) => {
@@ -221,13 +228,14 @@ export const Results: React.FC<ResultsProps> = (props) => {
         });
 
         return riders
+            .filter(rider => activeRiderIds.has(rider.id))
             .map(rider => ({
                 ...rider,
                 score: riderScores[rider.id] || 0
             }))
             .sort((a, b) => b.score - a.score);
 
-    }, [allRiderPoints, riders]);
+    }, [allRiderPoints, riders, participants]);
 
     return (
         <div className="flex flex-col lg:flex-row gap-8">
@@ -246,6 +254,8 @@ export const Results: React.FC<ResultsProps> = (props) => {
                     onUpdateMarketDeadline={onUpdateMarketDeadline}
                     onUpdateRider={onUpdateRider}
                     showToast={showToast}
+                    participants={participants}
+                    teamSnapshots={teamSnapshots}
                 />
             )}
 

@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
+
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
 import { TeamBuilder } from './components/TeamBuilder';
@@ -269,6 +270,15 @@ const App: React.FC = () => {
         showToast(`Piloto ${updatedRider.name} actualizado.`, 'success');
     };
 
+    const currentRound = useMemo(() => {
+        const now = new Date();
+        const futureRounds = rounds
+            .filter(r => r.round_date && new Date(r.round_date) > now)
+            .sort((a, b) => new Date(a.round_date!).getTime() - new Date(b.round_date!).getTime());
+        
+        return futureRounds.length > 0 ? futureRounds[0] : null;
+    }, [rounds]);
+
 
     if (loading) {
         return (
@@ -301,6 +311,7 @@ const App: React.FC = () => {
                         onUpdateTeam={handleUpdateParticipantTeam}
                         showToast={showToast}
                         marketDeadline={leagueSettings?.market_deadline || null}
+                        currentRound={currentRound}
                     />
                 )}
                 {view === 'results' && (
@@ -316,6 +327,7 @@ const App: React.FC = () => {
                         onAddRound={handleAddRound}
                         onUpdateRound={handleUpdateRound}
                         onUpdateMarketDeadline={handleUpdateMarketDeadline}
+                        // FIX: Pass the correct handler function `handleUpdateRider` instead of the undefined `onUpdateRider`.
                         onUpdateRider={handleUpdateRider}
                         showToast={showToast}
                     />

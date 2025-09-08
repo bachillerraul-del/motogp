@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Rider, Participant } from '../types';
+import type { Rider, Participant, Round } from '../types';
 import { TEAM_SIZE, BUDGET } from '../constants';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
@@ -14,6 +14,7 @@ interface TeamBuilderProps {
     onUpdateTeam: (participantId: number, team: Rider[]) => Promise<boolean>;
     showToast: (message: string, type: 'success' | 'error') => void;
     marketDeadline: string | null;
+    currentRound: Round | null;
 }
 
 type SaveModalState = 'closed' | 'enterName' | 'confirmUpdate';
@@ -75,7 +76,7 @@ const calculateTimeRemaining = (deadline: Date) => {
     return { days, hours, minutes, seconds };
 };
 
-export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, onAddToLeague, onUpdateTeam, showToast, marketDeadline }) => {
+export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, onAddToLeague, onUpdateTeam, showToast, marketDeadline, currentRound }) => {
     const { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull } = useTeamManagement(showToast);
     
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -218,7 +219,14 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
                         )}
                     </div>
                 )}
-                <h2 className="text-3xl font-bold mb-6 border-b-2 border-red-600 pb-2">Elige tus Pilotos</h2>
+                <div className="mb-6 border-b-2 border-red-600 pb-2 flex justify-between items-end flex-wrap">
+                    <h2 className="text-3xl font-bold">Elige tus Pilotos</h2>
+                    {currentRound && (
+                        <p className="text-md text-gray-300 whitespace-nowrap ml-4 mt-2 sm:mt-0">
+                            Próximo GP: <span className="font-bold text-red-500">{currentRound.name}</span>
+                        </p>
+                    )}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {availableRiders.map(rider => (
                         <RiderCard 
