@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Rider, Participant, Round } from '../types';
-import { TEAM_SIZE, BUDGET } from '../constants';
+import { TEAM_SIZE, BUDGET, MOTOGP_RIDERS } from '../constants';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
 import { CloseIcon } from './Icons';
@@ -89,6 +89,14 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
         isOpen: true, 
         timeRemaining: { days: 0, hours: 0, minutes: 0, seconds: 0 } 
     });
+
+    const initialPrices = useMemo(() => {
+        const priceMap = new Map<number, number>();
+        MOTOGP_RIDERS.forEach(rider => {
+            priceMap.set(rider.id, rider.price);
+        });
+        return priceMap;
+    }, []);
 
     useEffect(() => {
         if (!deadlineDate) {
@@ -228,16 +236,21 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
                     )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {availableRiders.map(rider => (
-                        <RiderCard 
-                            key={rider.id} 
-                            rider={rider} 
-                            onAdd={() => marketStatus.isOpen ? addRider(rider) : showToast('El mercado está cerrado.', 'error')} 
-                            isTeamFull={isTeamFull}
-                            isAffordable={rider.price <= (remainingBudget < 0 ? 0 : remainingBudget)}
-                            selectedByTeams={ridersInLeagues[rider.id] || []}
-                        />
-                    ))}
+                    {availableRiders.map(rider => {
+                        const initialPrice = initialPrices.get(rider.id) ?? rider.price;
+                        const priceChange = rider.price - initialPrice;
+                        return (
+                            <RiderCard 
+                                key={rider.id} 
+                                rider={rider} 
+                                onAdd={() => marketStatus.isOpen ? addRider(rider) : showToast('El mercado está cerrado.', 'error')} 
+                                isTeamFull={isTeamFull}
+                                isAffordable={rider.price <= (remainingBudget < 0 ? 0 : remainingBudget)}
+                                selectedByTeams={ridersInLeagues[rider.id] || []}
+                                priceChange={priceChange}
+                            />
+                        );
+                    })}
                 </div>
             </div>
 

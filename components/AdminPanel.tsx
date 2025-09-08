@@ -18,7 +18,7 @@ interface AdminPanelProps {
     onPointChange: (riderId: number, points: string) => Promise<void>;
     leagueSettings: LeagueSettings | null;
     onUpdateMarketDeadline: (deadline: string | null) => Promise<void>;
-    onUpdateRider: (rider: Rider) => void;
+    onUpdateRider: (rider: Rider) => Promise<void>;
     showToast: (message: string, type: 'success' | 'error') => void;
     participants: Participant[];
     teamSnapshots: TeamSnapshot[];
@@ -115,11 +115,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         }
     };
 
-    const handleSaveRider = (e: React.FormEvent) => {
+    const handleSaveRider = async (e: React.FormEvent) => {
         e.preventDefault();
         if (riderFormData) {
-            onUpdateRider(riderFormData);
-            setEditingRider(null);
+            try {
+                await onUpdateRider(riderFormData);
+                setEditingRider(null);
+            } catch (error) {
+                // Error toast is handled in the App component's function
+                console.error("Failed to save rider:", error);
+            }
         }
     };
 
@@ -157,16 +162,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         }
     };
 
-    const handleApplySuggestions = () => {
-        aiSuggestions.forEach(suggestion => {
+    const handleApplySuggestions = async () => {
+        const updates = aiSuggestions.map(suggestion => {
             const riderToUpdate = riders.find(r => r.id === suggestion.riderId);
             if (riderToUpdate) {
-                onUpdateRider({ ...riderToUpdate, price: suggestion.newPrice });
+                // Create a new object for the updated rider
+                const updatedRider = { ...riderToUpdate, price: suggestion.newPrice };
+                return onUpdateRider(updatedRider);
             }
+            return Promise.resolve();
         });
-        setIsSuggestionModalOpen(false);
-        setAiSuggestions([]);
-        showToast('Precios de los pilotos actualizados con las sugerencias de la IA.', 'success');
+    
+        try {
+            await Promise.all(updates);
+            setIsSuggestionModalOpen(false);
+            setAiSuggestions([]);
+            // Success toast is shown by onUpdateRider for each rider, but a summary is good.
+            showToast('Precios de los pilotos actualizados con las sugerencias de la IA.', 'success');
+        } catch (error) {
+            console.error("Error applying AI suggestions:", error);
+            showToast('Error al aplicar una o más sugerencias.', 'error');
+        }
     };
     
     const normalizeString = (str: string) => 

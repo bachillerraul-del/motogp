@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Rider } from '../types';
-import { PlusIcon } from './Icons';
+import { PlusIcon, ArrowUpIcon, ArrowDownIcon } from './Icons';
 
 interface RiderCardProps {
     rider: Rider;
@@ -8,11 +8,12 @@ interface RiderCardProps {
     isTeamFull: boolean;
     isAffordable: boolean;
     selectedByTeams: string[];
+    priceChange: number;
 }
 
 const formatPrice = (price: number): string => `€${price.toLocaleString('es-ES')}`;
 
-export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable, selectedByTeams }) => {
+export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable, selectedByTeams, priceChange }) => {
     const isSelectable = !rider.condition?.includes('unavailable') && !rider.condition?.includes('injured');
 
     const getButtonText = () => {
@@ -48,8 +49,14 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
                         <h3 className="text-xl font-bold text-white">{rider.name}</h3>
                         <p className="text-sm text-gray-400">{rider.team} / {rider.bike}</p>
                     </div>
-                    <div className="text-right flex-shrink-0">
+                    <div className="text-right flex-shrink-0 ml-2">
                         <p className="text-lg font-semibold text-white">{formatPrice(rider.price)}</p>
+                         {priceChange !== 0 && (
+                            <span className={`text-xs font-bold flex items-center justify-end gap-1 ${priceChange > 0 ? 'text-green-400' : 'text-red-500'}`}>
+                                {priceChange > 0 ? <ArrowUpIcon className="w-3 h-3" /> : <ArrowDownIcon className="w-3 h-3" />}
+                                <span>€{Math.abs(priceChange)}</span>
+                            </span>
+                        )}
                     </div>
                 </div>
                 {renderDynamicCondition()}

@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
@@ -7,7 +6,7 @@ import { Results } from './components/Results';
 import { Toast } from './components/Toast';
 import { Modal } from './components/Modal';
 import { supabase } from './lib/supabaseClient';
-import type { Participant, Rider, Round, TeamSnapshot, LeagueSettings } from './types';
+import type { Participant, Rider, Round, TeamSnapshot, LeagueSettings, AllRiderPoints } from './types';
 import { MOTOGP_RIDERS } from './constants';
 
 type View = 'builder' | 'results';
@@ -19,6 +18,7 @@ const App: React.FC = () => {
     const [teamSnapshots, setTeamSnapshots] = useState<TeamSnapshot[]>([]);
     const [leagueSettings, setLeagueSettings] = useState<LeagueSettings | null>(null);
     const [riders, setRiders] = useState<Rider[]>(MOTOGP_RIDERS);
+    const [allRiderPoints, setAllRiderPoints] = useState<AllRiderPoints>({});
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
     
@@ -75,11 +75,13 @@ const App: React.FC = () => {
 
     const fetchData = useCallback(async () => {
         setLoading(true);
-        const [participantsRes, roundsRes, snapshotsRes, settingsRes] = await Promise.all([
+        const [participantsRes, roundsRes, snapshotsRes, settingsRes, pointsRes, ridersRes] = await Promise.all([
             supabase.from('participants').select('*').order('id'),
             supabase.from('rounds').select('*').order('created_at'),
             supabase.from('team_snapshots').select('*').order('created_at'),
-            supabase.from('league_settings').select('*').limit(1).single()
+            supabase.from('league_settings').select('*').limit(1).single(),
+            supabase.from('rider_points').select('round_id, rider_id, points'),
+            supabase.from('rider').select('*').order('id')
         ]);
 
         if (participantsRes.error) {
@@ -104,13 +106,57 @@ const App: React.FC = () => {
         }
 
         if (settingsRes.error) {
-            // Don't show an error if it's just 'PGRST116' (No rows found), this is expected on first run
             if (settingsRes.error.code !== 'PGRST116') {
                  console.error('Error fetching settings:', settingsRes.error);
             }
             setLeagueSettings(null);
         } else {
             setLeagueSettings(settingsRes.data || null);
+        }
+
+        if (pointsRes.error) {
+            console.error('Error fetching rider points:', pointsRes.error);
+            showToast('No se pudieron cargar los puntos de los pilotos.', 'error');
+        } else if (pointsRes.data) {
+            const pointsMap = pointsRes.data.reduce((acc, item) => {
+                if (!acc[item.round_id]) acc[item.round_id] = {};
+                acc[item.round_id][item.rider_id] = item.points || 0;
+                return acc;
+            }, {} as AllRiderPoints);
+            setAllRiderPoints(pointsMap);
+        }
+        
+        if (ridersRes.error) {
+            console.error('Error fetching riders, using fallback:', ridersRes.error);
+            showToast('Error al cargar los datos de los pilotos. Usando datos locales.', 'error');
+            setRiders(MOTOGP_RIDERS); // Fallback to constants
+        } else if (ridersRes.data.length === 0) {
+            // Table is empty, let's seed it with the initial rider data
+            console.log('Seeding rider table with initial data...');
+            showToast('Inicializando datos de pilotos en la base de datos...', 'success');
+
+            const ridersToSeed = MOTOGP_RIDERS.map(rider => ({
+                id: rider.id,
+                name: rider.name,
+                team: rider.team,
+                bike: rider.bike,
+                price: rider.price,
+                condition: rider.condition ?? null,
+            }));
+
+            const { error: seedError } = await supabase.from('rider').upsert(ridersToSeed);
+
+            if (seedError) {
+                console.error('Error seeding riders table:', seedError);
+                showToast('Error al inicializar los datos de los pilotos.', 'error');
+                setRiders(MOTOGP_RIDERS); // Fallback to local data on seed error
+            } else {
+                showToast('Datos de pilotos inicializados correctamente.', 'success');
+                setRiders(MOTOGP_RIDERS); // Use the data we just seeded
+            }
+        } else {
+            // We have data from the database, use it
+            setRiders(ridersRes.data);
         }
 
         setLoading(false);
@@ -199,8 +245,6 @@ const App: React.FC = () => {
     };
     
     const handleDeleteParticipant = async (participantId: number) => {
-        // Note: This will cascade delete snapshots if set up in DB, otherwise they remain.
-        // For simplicity, we are not cleaning snapshots here, but a real app should.
         const { error } = await supabase
             .from('participants')
             .delete()
@@ -246,8 +290,6 @@ const App: React.FC = () => {
     };
     
     const handleUpdateMarketDeadline = async (deadline: string | null) => {
-        // Using upsert is more robust. It will insert if no row with the given ID exists,
-        // or update it if it does. We'll use a fixed ID of 1 for the single settings row.
         const { error } = await supabase
             .from('league_settings')
             .upsert({ id: 1, market_deadline: deadline });
@@ -261,7 +303,25 @@ const App: React.FC = () => {
         }
     };
 
-    const handleUpdateRider = (updatedRider: Rider) => {
+    const handleUpdateRider = async (updatedRider: Rider): Promise<void> => {
+        const { id, ...updateData } = updatedRider;
+
+        // Ensure condition is handled correctly (null vs undefined)
+        if (updateData.condition === undefined) {
+            updateData.condition = null;
+        }
+
+        const { error } = await supabase
+            .from('rider')
+            .update(updateData)
+            .eq('id', id);
+        
+        if (error) {
+            console.error("Error updating rider:", error);
+            showToast(`Error al actualizar a ${updatedRider.name}.`, 'error');
+            throw error; // Re-throw to allow caller to handle it
+        }
+
         setRiders(prevRiders =>
             prevRiders.map(rider =>
                 rider.id === updatedRider.id ? updatedRider : rider
@@ -327,9 +387,10 @@ const App: React.FC = () => {
                         onAddRound={handleAddRound}
                         onUpdateRound={handleUpdateRound}
                         onUpdateMarketDeadline={handleUpdateMarketDeadline}
-                        // FIX: Pass the correct handler function `handleUpdateRider` instead of the undefined `onUpdateRider`.
                         onUpdateRider={handleUpdateRider}
                         showToast={showToast}
+                        allRiderPoints={allRiderPoints}
+                        refetchData={fetchData}
                     />
                 )}
             </main>

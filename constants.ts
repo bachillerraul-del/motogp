@@ -1,7 +1,7 @@
 import type { Rider } from './types';
 
 export const TEAM_SIZE = 5;
-export const BUDGET = 1100;
+export const BUDGET = 1150;
 
 export const MOTOGP_RIDERS: Rider[] = [
     {

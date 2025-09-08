@@ -1,16 +1,11 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import type { Rider, Participant, Round, TeamSnapshot, LeagueSettings } from '../types';
+import type { Rider, Participant, Round, TeamSnapshot, LeagueSettings, AllRiderPoints } from '../types';
 import { supabase } from '../lib/supabaseClient';
 import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
 import { Leaderboard } from './Leaderboard';
 import { RiderLeaderboard } from './RiderLeaderboard';
 import { TrophyIcon } from './Icons';
-
-// Type definitions
-type RiderRoundPoints = number;
-type AllRiderPoints = Record<number, Record<number, RiderRoundPoints>>;
-type RiderWithScore = Rider & { score: number };
 
 // Modal for rider point details
 interface RiderDetailModalProps {
@@ -19,6 +14,8 @@ interface RiderDetailModalProps {
     allRiderPoints: AllRiderPoints;
     onClose: () => void;
 }
+
+type RiderWithScore = Rider & { score: number };
 
 const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, rounds, allRiderPoints, onClose }) => {
     if (!rider) return null;
@@ -80,8 +77,10 @@ interface ResultsProps {
     onAddRound: (roundName: string) => Promise<void>;
     onUpdateRound: (round: Round) => Promise<void>;
     onUpdateMarketDeadline: (deadline: string | null) => Promise<void>;
-    onUpdateRider: (rider: Rider) => void;
+    onUpdateRider: (rider: Rider) => Promise<void>;
     showToast: (message: string, type: 'success' | 'error') => void;
+    allRiderPoints: AllRiderPoints;
+    refetchData: () => void;
 }
 
 const getTeamForRound = (participantId: number, roundDate: string | null, snapshots: TeamSnapshot[]): number[] => {
@@ -98,10 +97,9 @@ export const Results: React.FC<ResultsProps> = (props) => {
     const { 
         participants, rounds, teamSnapshots, leagueSettings, riders, isAdmin, 
         onUpdateParticipant, onDeleteParticipant, onAddRound, onUpdateRound, onUpdateMarketDeadline, onUpdateRider,
-        showToast 
+        showToast, allRiderPoints, refetchData
     } = props;
     
-    const [allRiderPoints, setAllRiderPoints] = useState<AllRiderPoints>({});
     const [selectedRoundForEditing, setSelectedRoundForEditing] = useState<Round | null>(null);
     const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
     const [selectedRiderDetails, setSelectedRiderDetails] = useState<RiderWithScore | null>(null);
@@ -122,23 +120,6 @@ export const Results: React.FC<ResultsProps> = (props) => {
         }
     }, [rounds, selectedRoundForEditing]);
 
-    useEffect(() => {
-        const fetchRiderPoints = async () => {
-            const { data, error } = await supabase.from('rider_points').select('round_id, rider_id, points');
-            if (error) {
-                console.error('Error fetching rider points:', error);
-            } else if (data) {
-                const pointsMap = data.reduce((acc, item) => {
-                    if (!acc[item.round_id]) acc[item.round_id] = {};
-                    acc[item.round_id][item.rider_id] = item.points || 0;
-                    return acc;
-                }, {} as AllRiderPoints);
-                setAllRiderPoints(pointsMap);
-            }
-        };
-        fetchRiderPoints();
-    }, []);
-
     const handlePointChange = async (riderId: number, pointsStr: string) => {
         if (selectedRoundForEditing === null) {
             showToast('Por favor, selecciona una jornada para editar los puntos.', 'error');
@@ -146,14 +127,6 @@ export const Results: React.FC<ResultsProps> = (props) => {
         }
         const finalPoints = pointsStr === '' ? 0 : parseInt(pointsStr, 10);
         if (isNaN(finalPoints)) return;
-
-        setAllRiderPoints(prev => ({
-            ...prev,
-            [selectedRoundForEditing.id]: {
-                ...prev[selectedRoundForEditing.id],
-                [riderId]: finalPoints
-            },
-        }));
 
         const { error } = await supabase.from('rider_points').upsert({
             round_id: selectedRoundForEditing.id,
@@ -164,18 +137,20 @@ export const Results: React.FC<ResultsProps> = (props) => {
         if (error) {
             console.error('Error upserting rider points:', error);
             showToast('Error al guardar los puntos.', 'error');
+        } else {
+            refetchData();
         }
     };
     
     const confirmClearPoints = async () => {
         if (selectedRoundForEditing === null) return;
-        setAllRiderPoints(prev => ({ ...prev, [selectedRoundForEditing.id]: {} }));
         const { error } = await supabase.from('rider_points').delete().eq('round_id', selectedRoundForEditing.id);
         if (error) {
             console.error('Error clearing points:', error);
             showToast('Error al limpiar los puntos.', 'error');
         } else {
              showToast('Puntos limpiados para la jornada.', 'success');
+             refetchData();
         }
         setIsConfirmingClearPoints(false);
     };

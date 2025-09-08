@@ -32,3 +32,6 @@ export interface LeagueSettings {
     id: number;
     market_deadline: string | null;
 }
+
+export type RiderRoundPoints = number;
+export type AllRiderPoints = Record<number, Record<number, RiderRoundPoints>>;
