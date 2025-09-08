@@ -187,30 +187,42 @@ export const Results: React.FC<ResultsProps> = (props) => {
     }, [participants, calculateScore]);
 
     const sortedRiders = useMemo(() => {
-        const activeRiderIds = new Set<number>();
-        participants.forEach(p => {
-            p.team_ids.forEach(riderId => {
-                activeRiderIds.add(riderId);
-            });
-        });
-
         const riderScores: Record<number, number> = {};
-        Object.values(allRiderPoints).forEach(roundPoints => {
-            Object.entries(roundPoints).forEach(([riderId, points]) => {
-                const id = parseInt(riderId, 10);
-                riderScores[id] = (riderScores[id] || 0) + points;
+
+        if (leaderboardView === 'general') {
+            // Calculate total score for all rounds
+            Object.values(allRiderPoints).forEach(roundPoints => {
+                Object.entries(roundPoints).forEach(([riderId, points]) => {
+                    const id = parseInt(riderId, 10);
+                    riderScores[id] = (riderScores[id] || 0) + points;
+                });
             });
-        });
+        } else {
+            // Calculate score for the selected round only
+            const selectedRoundPoints = allRiderPoints[leaderboardView] || {};
+            Object.entries(selectedRoundPoints).forEach(([riderId, points]) => {
+                const id = parseInt(riderId, 10);
+                riderScores[id] = points;
+            });
+        }
 
         return riders
-            .filter(rider => activeRiderIds.has(rider.id))
             .map(rider => ({
                 ...rider,
                 score: riderScores[rider.id] || 0
             }))
+            .filter(rider => rider.score > 0)
             .sort((a, b) => b.score - a.score);
 
-    }, [allRiderPoints, riders, participants]);
+    }, [allRiderPoints, riders, leaderboardView]);
+
+    const riderLeaderboardTitle = useMemo(() => {
+        if (leaderboardView === 'general') {
+            return "Clasificación de Pilotos";
+        }
+        const round = rounds.find(r => r.id === leaderboardView);
+        return round ? `Pilotos: ${round.name}` : "Clasificación de Pilotos";
+    }, [leaderboardView, rounds]);
 
     return (
         <div className="flex flex-col lg:flex-row gap-8">
@@ -247,7 +259,11 @@ export const Results: React.FC<ResultsProps> = (props) => {
                 riders={riders}
             />
 
-            <RiderLeaderboard riders={sortedRiders} onRiderClick={setSelectedRiderDetails} />
+            <RiderLeaderboard
+                riders={sortedRiders}
+                onRiderClick={setSelectedRiderDetails}
+                title={riderLeaderboardTitle}
+            />
             
             <RiderDetailModal 
                 rider={selectedRiderDetails}

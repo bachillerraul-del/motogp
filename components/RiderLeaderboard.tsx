@@ -9,6 +9,7 @@ interface RiderWithScore extends Rider {
 interface RiderLeaderboardProps {
     riders: RiderWithScore[];
     onRiderClick: (rider: RiderWithScore) => void;
+    title: string;
 }
 
 const getRankStyle = (index: number) => {
@@ -18,13 +19,13 @@ const getRankStyle = (index: number) => {
     return 'border-l-4 border-transparent';
 };
 
-export const RiderLeaderboard: React.FC<RiderLeaderboardProps> = ({ riders, onRiderClick }) => {
+export const RiderLeaderboard: React.FC<RiderLeaderboardProps> = ({ riders, onRiderClick, title }) => {
     return (
         <aside className="w-full lg:w-1/4">
             <div className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
                 <div className="flex items-center gap-3">
                     <ChartBarIcon className="w-6 h-6 text-red-500" />
-                    <h2 className="text-xl font-bold">Clasificación de Pilotos</h2>
+                    <h2 className="text-xl font-bold">{title}</h2>
                 </div>
 
                 <div className="max-h-[65vh] overflow-y-auto pr-2 space-y-2">
