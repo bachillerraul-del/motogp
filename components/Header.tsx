@@ -1,9 +1,9 @@
 import React from 'react';
-import { MotoIcon, LoginIcon, LogoutIcon, ShieldCheckIcon } from './Icons';
+import { MotoIcon, LoginIcon, LogoutIcon, ShieldCheckIcon, CalendarIcon } from './Icons';
 
 interface HeaderProps {
-    currentView: 'builder' | 'results';
-    setView: (view: 'builder' | 'results') => void;
+    currentView: 'builder' | 'results' | 'calendar';
+    setView: (view: 'builder' | 'results' | 'calendar') => void;
     isAdmin: boolean;
     onAdminLogin: () => void;
     onAdminLogout: () => void;
@@ -11,7 +11,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, onAdminLogin, onAdminLogout }) => {
     
-    const navButtonStyle = "px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200";
+    const navButtonStyle = "px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 flex items-center gap-2";
     const activeButtonStyle = "bg-red-600 text-white";
     const inactiveButtonStyle = "text-gray-300 hover:bg-gray-700 hover:text-white";
 
@@ -39,6 +39,13 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, o
                         >
                             Resultados
                         </button>
+                        <button 
+                            onClick={() => setView('calendar')}
+                            className={`${navButtonStyle} ${currentView === 'calendar' ? activeButtonStyle : inactiveButtonStyle}`}
+                        >
+                            <CalendarIcon className="w-5 h-5" />
+                            <span className="hidden sm:inline">Calendario</span>
+                        </button>
                     </nav>
 
                     {isAdmin ? (
@@ -52,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, o
                             </button>
                         </div>
                     ) : (
-                        <button onClick={onAdminLogin} className={`${inactiveButtonStyle} ${navButtonStyle} flex items-center`}>
+                        <button onClick={onAdminLogin} className={`${inactiveButtonStyle} ${navButtonStyle}`}>
                             <LoginIcon className="w-5 h-5 mr-2" />
                             Admin Login
                         </button>

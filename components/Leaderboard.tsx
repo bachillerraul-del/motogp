@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { Rider, Participant, Round, TeamSnapshot } from '../types';
+import type { Rider, Participant, Race, TeamSnapshot } from '../types';
 import { TEAM_SIZE } from '../constants';
 import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon } from './Icons';
 
@@ -10,7 +10,7 @@ interface ParticipantWithScore extends Participant {
 }
 interface LeaderboardProps {
     participants: ParticipantWithScore[];
-    rounds: Round[];
+    races: Race[];
     leaderboardView: number | 'general';
     onLeaderboardViewChange: (view: number | 'general') => void;
     isAdmin: boolean;
@@ -21,19 +21,17 @@ interface LeaderboardProps {
     riders: Rider[];
 }
 
-const getTeamForRound = (participantId: number, roundDate: string | null, snapshots: TeamSnapshot[]): number[] => {
-    if (!roundDate) return [];
-    
-    const participantSnapshots = snapshots
-        .filter(s => s.participant_id === participantId && new Date(s.created_at) < new Date(roundDate))
+const getTeamForRace = (participantId: number, raceId: number, snapshots: TeamSnapshot[]): number[] => {
+    const raceSnapshots = snapshots
+        .filter(s => s.participant_id === participantId && s.race_id === raceId)
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         
-    return participantSnapshots.length > 0 ? participantSnapshots[0].team_ids : [];
+    return raceSnapshots.length > 0 ? raceSnapshots[0].team_ids : [];
 };
 
 export const Leaderboard: React.FC<LeaderboardProps> = ({
     participants,
-    rounds,
+    races,
     leaderboardView,
     onLeaderboardViewChange,
     isAdmin,
@@ -80,8 +78,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         if (leaderboardView === 'general') {
             return "Clasificación General";
         }
-        const round = rounds.find(r => r.id === leaderboardView);
-        return round ? `Clasificación ${round.name}` : "Clasificación de la Liga";
+        const race = races.find(r => r.id === leaderboardView);
+        return race ? `Clasificación ${race.gp_name}` : "Clasificación de la Liga";
     };
 
     return (
@@ -95,7 +93,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                 >
                     <option value="general">Clasificación General</option>
                     <optgroup label="Por Jornada">
-                        {rounds.map(round => <option key={round.id} value={round.id}>{round.name}</option>)}
+                        {races.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
                     </optgroup>
                 </select>
             </div>
@@ -108,11 +106,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                 ) : (
                     participants.map((participant, index) => {
                         const teamIdsForView = leaderboardView === 'general'
-                            ? participant.team_ids
-                            : (() => {
-                                const round = rounds.find(r => r.id === leaderboardView);
-                                return round ? getTeamForRound(participant.id, round.round_date, teamSnapshots) : participant.team_ids;
-                            })();
+                            ? participant.team_ids // Shows the latest team in general view
+                            : getTeamForRace(participant.id, leaderboardView, teamSnapshots);
 
                         const teamCost = teamIdsForView.reduce((total, riderId) => {
                             return total + (ridersById[riderId]?.price || 0);
@@ -163,19 +158,19 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                     {leaderboardView === 'general' ? (
                                         <>
                                             <p className="text-xs text-gray-400 mb-2 uppercase">Puntuación por Jornada</p>
-                                            {rounds.length > 0 ? (
+                                            {races.length > 0 ? (
                                                 <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
-                                                    {rounds.map(round => {
-                                                        const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
-                                                        const roundPointsMap = allRiderPoints[round.id] || {};
-                                                        const roundScore = teamForRound.reduce((acc, riderId) => {
-                                                            const points = roundPointsMap[riderId] || 0;
+                                                    {races.map(race => {
+                                                        const teamForRace = getTeamForRace(participant.id, race.id, teamSnapshots);
+                                                        const racePointsMap = allRiderPoints[race.id] || {};
+                                                        const raceScore = teamForRace.reduce((acc, riderId) => {
+                                                            const points = racePointsMap[riderId] || 0;
                                                             return acc + points;
                                                         }, 0);
                                                         return (
-                                                            <li key={round.id} className="flex justify-between items-baseline">
-                                                                <span className="truncate text-gray-300 mr-2">{round.name}:</span>
-                                                                <span className="font-semibold text-white whitespace-nowrap">{roundScore} pts</span>
+                                                            <li key={race.id} className="flex justify-between items-baseline">
+                                                                <span className="truncate text-gray-300 mr-2">{race.gp_name}:</span>
+                                                                <span className="font-semibold text-white whitespace-nowrap">{raceScore} pts</span>
                                                             </li>
                                                         );
                                                     })}
@@ -187,12 +182,12 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                     ) : (
                                         <>
                                             {(() => {
-                                                const round = rounds.find(r => r.id === leaderboardView);
-                                                if (!round) return <p className="text-gray-500 text-sm">Jornada no encontrada.</p>;
-                                                const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
+                                                const race = races.find(r => r.id === leaderboardView);
+                                                if (!race) return <p className="text-gray-500 text-sm">Jornada no encontrada.</p>;
+                                                const teamForRace = getTeamForRace(participant.id, race.id, teamSnapshots);
                                                 const roundPointsMap = allRiderPoints[leaderboardView] || {};
                                                 
-                                                const sortedTeam = [...teamForRound].sort((a, b) => {
+                                                const sortedTeam = [...teamForRace].sort((a, b) => {
                                                     const pointsA = roundPointsMap[a] || 0;
                                                     const pointsB = roundPointsMap[b] || 0;
                                                     return pointsB - pointsA;
@@ -200,7 +195,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
 
                                                 return (
                                                     <>
-                                                        <p className="text-xs text-gray-400 mb-2 uppercase">Equipo para {round.name} ({teamForRound.length}/{TEAM_SIZE})</p>
+                                                        <p className="text-xs text-gray-400 mb-2 uppercase">Equipo para {race.gp_name} ({teamForRace.length}/{TEAM_SIZE})</p>
                                                         {sortedTeam.length > 0 ? (
                                                             <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 text-sm">
                                                                 {sortedTeam.map(riderId => {
@@ -215,7 +210,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                                                 })}
                                                             </ul>
                                                         ) : (
-                                                            <p className="text-gray-500 text-sm">No se encontró un equipo guardado antes de la fecha de esta jornada.</p>
+                                                            <p className="text-gray-500 text-sm">No se encontró un equipo guardado para esta jornada.</p>
                                                         )}
                                                     </>
                                                 );

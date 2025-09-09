@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import type { Rider, Participant, Round, TeamSnapshot, LeagueSettings, AllRiderPoints } from '../types';
+import type { Rider, Participant, Race, TeamSnapshot, AllRiderPoints } from '../types';
 import { supabase } from '../lib/supabaseClient';
 import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
@@ -10,19 +10,19 @@ import { TrophyIcon } from './Icons';
 // Modal for rider point details
 interface RiderDetailModalProps {
     rider: RiderWithScore | null;
-    rounds: Round[];
+    races: Race[];
     allRiderPoints: AllRiderPoints;
     onClose: () => void;
 }
 
 type RiderWithScore = Rider & { score: number };
 
-const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, rounds, allRiderPoints, onClose }) => {
+const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, races, allRiderPoints, onClose }) => {
     if (!rider) return null;
 
-    const sortedRounds = [...rounds].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    const riderHasPoints = sortedRounds.some(round => {
-        const points = allRiderPoints[round.id]?.[rider.id];
+    const sortedRaces = [...races].sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
+    const riderHasPoints = sortedRaces.some(race => {
+        const points = allRiderPoints[race.id]?.[rider.id];
         return points && points > 0;
     });
 
@@ -43,14 +43,14 @@ const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, rounds, allR
                 <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-3">
                     <h3 className="text-md font-semibold text-gray-300 uppercase tracking-wider border-b border-gray-700 pb-2">Puntos por Jornada</h3>
                     {riderHasPoints ? (
-                        sortedRounds.map(round => {
-                            const points = allRiderPoints[round.id]?.[rider.id] || 0;
+                        sortedRaces.map(race => {
+                            const points = allRiderPoints[race.id]?.[rider.id] || 0;
 
                             if (points === 0) return null;
 
                             return (
-                                <div key={round.id} className="bg-gray-700/50 p-3 rounded-md flex justify-between items-center">
-                                    <p className="font-semibold text-white">{round.name}</p>
+                                <div key={race.id} className="bg-gray-700/50 p-3 rounded-md flex justify-between items-center">
+                                    <p className="font-semibold text-white">{race.gp_name}</p>
                                     <p className="font-bold text-lg text-yellow-300">{points} pts</p>
                                 </div>
                             );
@@ -67,40 +67,35 @@ const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, rounds, allR
 
 interface ResultsProps {
     participants: Participant[];
-    rounds: Round[];
+    races: Race[];
     teamSnapshots: TeamSnapshot[];
-    leagueSettings: LeagueSettings | null;
     riders: Rider[];
     isAdmin: boolean;
     onUpdateParticipant: (participant: Participant) => Promise<void>;
     onDeleteParticipant: (participantId: number) => Promise<void>;
-    onAddRound: (roundName: string) => Promise<void>;
-    onUpdateRound: (round: Round) => Promise<void>;
-    onUpdateMarketDeadline: (deadline: string | null) => Promise<void>;
+    onUpdateRace: (race: Race) => Promise<void>;
     onUpdateRider: (rider: Rider) => Promise<void>;
     showToast: (message: string, type: 'success' | 'error') => void;
     allRiderPoints: AllRiderPoints;
     refetchData: () => void;
 }
 
-const getTeamForRound = (participantId: number, roundDate: string | null, snapshots: TeamSnapshot[]): number[] => {
-    if (!roundDate) return [];
-    
-    const participantSnapshots = snapshots
-        .filter(s => s.participant_id === participantId && new Date(s.created_at) < new Date(roundDate))
+const getTeamForRace = (participantId: number, raceId: number, snapshots: TeamSnapshot[]): number[] => {
+    const raceSnapshots = snapshots
+        .filter(s => s.participant_id === participantId && s.race_id === raceId)
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         
-    return participantSnapshots.length > 0 ? participantSnapshots[0].team_ids : [];
+    return raceSnapshots.length > 0 ? raceSnapshots[0].team_ids : [];
 };
 
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
-        participants, rounds, teamSnapshots, leagueSettings, riders, isAdmin, 
-        onUpdateParticipant, onDeleteParticipant, onAddRound, onUpdateRound, onUpdateMarketDeadline, onUpdateRider,
+        participants, races, teamSnapshots, riders, isAdmin, 
+        onUpdateParticipant, onDeleteParticipant, onUpdateRace, onUpdateRider,
         showToast, allRiderPoints, refetchData
     } = props;
     
-    const [selectedRoundForEditing, setSelectedRoundForEditing] = useState<Round | null>(null);
+    const [selectedRaceForEditing, setSelectedRaceForEditing] = useState<Race | null>(null);
     const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
     const [selectedRiderDetails, setSelectedRiderDetails] = useState<RiderWithScore | null>(null);
     const defaultViewIsSet = useRef(false);
@@ -110,18 +105,18 @@ export const Results: React.FC<ResultsProps> = (props) => {
     const [isConfirmingClearPoints, setIsConfirmingClearPoints] = useState(false);
 
     useEffect(() => {
-        if (rounds.length > 0 && !defaultViewIsSet.current) {
-            const latestRound = [...rounds].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-            setLeaderboardView(latestRound.id);
-            if (!selectedRoundForEditing) {
-                setSelectedRoundForEditing(latestRound);
+        if (races.length > 0 && !defaultViewIsSet.current) {
+            const latestRace = [...races].sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
+            setLeaderboardView(latestRace.id);
+            if (!selectedRaceForEditing) {
+                setSelectedRaceForEditing(latestRace);
             }
             defaultViewIsSet.current = true;
         }
-    }, [rounds, selectedRoundForEditing]);
+    }, [races, selectedRaceForEditing]);
 
     const handlePointChange = async (riderId: number, pointsStr: string) => {
-        if (selectedRoundForEditing === null) {
+        if (selectedRaceForEditing === null) {
             showToast('Por favor, selecciona una jornada para editar los puntos.', 'error');
             return;
         }
@@ -129,7 +124,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
         if (isNaN(finalPoints)) return;
 
         const { error } = await supabase.from('rider_points').upsert({
-            round_id: selectedRoundForEditing.id,
+            round_id: selectedRaceForEditing.id,
             rider_id: riderId,
             points: finalPoints
         });
@@ -143,8 +138,8 @@ export const Results: React.FC<ResultsProps> = (props) => {
     };
     
     const confirmClearPoints = async () => {
-        if (selectedRoundForEditing === null) return;
-        const { error } = await supabase.from('rider_points').delete().eq('round_id', selectedRoundForEditing.id);
+        if (selectedRaceForEditing === null) return;
+        const { error } = await supabase.from('rider_points').delete().eq('round_id', selectedRaceForEditing.id);
         if (error) {
             console.error('Error clearing points:', error);
             showToast('Error al limpiar los puntos.', 'error');
@@ -162,22 +157,22 @@ export const Results: React.FC<ResultsProps> = (props) => {
     };
 
     const calculateScore = useCallback((participant: Participant): number => {
-        const calculateRoundScore = (round: Round) => {
-            const teamForRound = getTeamForRound(participant.id, round.round_date, teamSnapshots);
-            const roundPointsMap = allRiderPoints[round.id] || {};
-            return teamForRound.reduce((acc, riderId) => {
-                const points = roundPointsMap[riderId] || 0;
+        const calculateRaceScore = (race: Race) => {
+            const teamForRace = getTeamForRace(participant.id, race.id, teamSnapshots);
+            const racePointsMap = allRiderPoints[race.id] || {};
+            return teamForRace.reduce((acc, riderId) => {
+                const points = racePointsMap[riderId] || 0;
                 return acc + points;
             }, 0);
         };
 
         if (leaderboardView === 'general') {
-            return rounds.reduce((totalScore, round) => totalScore + calculateRoundScore(round), 0);
+            return races.reduce((totalScore, race) => totalScore + calculateRaceScore(race), 0);
         } else {
-            const round = rounds.find(r => r.id === leaderboardView);
-            return round ? calculateRoundScore(round) : 0;
+            const race = races.find(r => r.id === leaderboardView);
+            return race ? calculateRaceScore(race) : 0;
         }
-    }, [leaderboardView, rounds, teamSnapshots, allRiderPoints]);
+    }, [leaderboardView, races, teamSnapshots, allRiderPoints]);
 
     const sortedParticipants = useMemo(() => {
         return [...participants].map(p => ({
@@ -220,35 +215,30 @@ export const Results: React.FC<ResultsProps> = (props) => {
         if (leaderboardView === 'general') {
             return "Clasificación de Pilotos";
         }
-        const round = rounds.find(r => r.id === leaderboardView);
-        return round ? `Pilotos: ${round.name}` : "Clasificación de Pilotos";
-    }, [leaderboardView, rounds]);
+        const race = races.find(r => r.id === leaderboardView);
+        return race ? `Pilotos: ${race.gp_name}` : "Clasificación de Pilotos";
+    }, [leaderboardView, races]);
 
     return (
         <div className="flex flex-col lg:flex-row gap-8">
             {isAdmin && (
                 <AdminPanel
-                    rounds={rounds}
-                    onAddRound={onAddRound}
-                    selectedRound={selectedRoundForEditing}
-                    onSelectRound={setSelectedRoundForEditing}
-                    onUpdateRound={onUpdateRound}
+                    races={races}
+                    selectedRace={selectedRaceForEditing}
+                    onSelectRace={setSelectedRaceForEditing}
+                    onUpdateRace={onUpdateRace}
                     onClearPoints={() => setIsConfirmingClearPoints(true)}
                     riders={riders}
                     riderPoints={allRiderPoints}
                     onPointChange={handlePointChange}
-                    leagueSettings={leagueSettings}
-                    onUpdateMarketDeadline={onUpdateMarketDeadline}
                     onUpdateRider={onUpdateRider}
                     showToast={showToast}
-                    participants={participants}
-                    teamSnapshots={teamSnapshots}
                 />
             )}
 
             <Leaderboard
                 participants={sortedParticipants}
-                rounds={rounds}
+                races={races}
                 leaderboardView={leaderboardView}
                 onLeaderboardViewChange={setLeaderboardView}
                 isAdmin={isAdmin}
@@ -267,7 +257,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
             
             <RiderDetailModal 
                 rider={selectedRiderDetails}
-                rounds={rounds}
+                races={races}
                 allRiderPoints={allRiderPoints}
                 onClose={() => setSelectedRiderDetails(null)}
             />

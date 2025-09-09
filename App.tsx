@@ -3,20 +3,34 @@ import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
 import { TeamBuilder } from './components/TeamBuilder';
 import { Results } from './components/Results';
+import { RaceCalendar } from './components/RaceCalendar';
 import { Toast } from './components/Toast';
 import { Modal } from './components/Modal';
 import { supabase } from './lib/supabaseClient';
-import type { Participant, Rider, Round, TeamSnapshot, LeagueSettings, AllRiderPoints } from './types';
+import type { Participant, Rider, TeamSnapshot, AllRiderPoints, Race } from './types';
 import { MOTOGP_RIDERS } from './constants';
 
-type View = 'builder' | 'results';
+type View = 'builder' | 'results' | 'calendar';
+
+const getTeamForRace = (participantId: number, raceId: number, snapshots: TeamSnapshot[]): number[] => {
+    const raceSnapshots = snapshots
+        .filter(s => s.participant_id === participantId && s.race_id === raceId)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        
+    // If there are snapshots for this specific race, use the latest one
+    if (raceSnapshots.length > 0) {
+        return raceSnapshots[0].team_ids;
+    }
+
+    return [];
+};
+
 
 const App: React.FC = () => {
     const [view, setView] = useState<View>('builder');
     const [participants, setParticipants] = useState<Participant[]>([]);
-    const [rounds, setRounds] = useState<Round[]>([]);
+    const [races, setRaces] = useState<Race[]>([]);
     const [teamSnapshots, setTeamSnapshots] = useState<TeamSnapshot[]>([]);
-    const [leagueSettings, setLeagueSettings] = useState<LeagueSettings | null>(null);
     const [riders, setRiders] = useState<Rider[]>(MOTOGP_RIDERS);
     const [allRiderPoints, setAllRiderPoints] = useState<AllRiderPoints>({});
     const [loading, setLoading] = useState(true);
@@ -75,13 +89,12 @@ const App: React.FC = () => {
 
     const fetchData = useCallback(async () => {
         setLoading(true);
-        const [participantsRes, roundsRes, snapshotsRes, settingsRes, pointsRes, ridersRes] = await Promise.all([
+        const [participantsRes, snapshotsRes, pointsRes, ridersRes, racesRes] = await Promise.all([
             supabase.from('participants').select('*').order('id'),
-            supabase.from('rounds').select('*').order('created_at'),
             supabase.from('team_snapshots').select('*').order('created_at'),
-            supabase.from('league_settings').select('*').limit(1).single(),
             supabase.from('rider_points').select('round_id, rider_id, points'),
-            supabase.from('rider').select('*').order('id')
+            supabase.from('rider').select('*').order('id'),
+            supabase.from('races').select('*').order('round')
         ]);
 
         if (participantsRes.error) {
@@ -90,28 +103,12 @@ const App: React.FC = () => {
         } else {
             setParticipants(participantsRes.data || []);
         }
-
-        if (roundsRes.error) {
-            console.error('Error fetching rounds:', roundsRes.error);
-            showToast('No se pudieron cargar las jornadas.', 'error');
-        } else {
-            setRounds(roundsRes.data || []);
-        }
         
         if (snapshotsRes.error) {
             console.error('Error fetching snapshots:', snapshotsRes.error);
             showToast('No se pudo cargar el historial de equipos.', 'error');
         } else {
             setTeamSnapshots(snapshotsRes.data || []);
-        }
-
-        if (settingsRes.error) {
-            if (settingsRes.error.code !== 'PGRST116') {
-                 console.error('Error fetching settings:', settingsRes.error);
-            }
-            setLeagueSettings(null);
-        } else {
-            setLeagueSettings(settingsRes.data || null);
         }
 
         if (pointsRes.error) {
@@ -159,6 +156,14 @@ const App: React.FC = () => {
             setRiders(ridersRes.data);
         }
 
+        if (racesRes.error) {
+            console.error('Error fetching races:', racesRes.error);
+            showToast('No se pudo cargar el calendario de carreras.', 'error');
+        } else {
+            setRaces(racesRes.data || []);
+        }
+
+
         setLoading(false);
     }, [showToast]);
 
@@ -166,8 +171,92 @@ const App: React.FC = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+    
+    // Effect for automatic price adjustments, runs only for admins
+    useEffect(() => {
+        // Ensure all data is loaded and user is admin
+        if (isAdmin && !loading && races.length > 0 && riders.length > 0) {
+            const processPriceAdjustments = async () => {
+                const now = new Date();
+                const unprocessedPastRaces = races
+                    .filter(r => r.race_date && new Date(r.race_date) < now && !r.prices_adjusted)
+                    .sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
 
-    const addParticipantToLeague = useCallback(async (name: string, team: Rider[]): Promise<boolean> => {
+                if (unprocessedPastRaces.length === 0) {
+                    return; // Nothing to process
+                }
+
+                showToast(`Detectadas ${unprocessedPastRaces.length} jornadas pasadas. Ajustando precios...`, 'success');
+
+                // Create a mutable map of current rider prices to be updated after each race processing
+                const currentRiderPrices = new Map<number, number>();
+                riders.forEach(r => currentRiderPrices.set(r.id, r.price));
+                
+                // Process each race sequentially to ensure price changes compound correctly
+                for (const race of unprocessedPastRaces) {
+                    const riderSelectionCounts = new Map<number, number>();
+
+                    // Determine team composition for each participant for this specific race
+                    participants.forEach(p => {
+                        const teamForRace = getTeamForRace(p.id, race.id, teamSnapshots);
+                        teamForRace.forEach(riderId => {
+                            riderSelectionCounts.set(riderId, (riderSelectionCounts.get(riderId) || 0) + 1);
+                        });
+                    });
+                    
+                    // Calculate and apply price adjustments for this race
+                    currentRiderPrices.forEach((currentPrice, riderId) => {
+                        const selectionCount = riderSelectionCounts.get(riderId) || 0;
+                        const rider = riders.find(r => r.id === riderId);
+                        let newPrice = currentPrice;
+
+                        if (selectionCount > 0) {
+                            newPrice += selectionCount * 10;
+                        } else if (!rider?.condition) { // Only reduce price for available riders
+                            newPrice = Math.max(100, currentPrice - 10); // Enforce a minimum price of €100
+                        }
+                        
+                        // Update the price in our map for the next iteration
+                        currentRiderPrices.set(riderId, newPrice);
+                    });
+                }
+
+                // After processing all races, prepare the final update payload for the database
+                const ridersToUpdate = Array.from(currentRiderPrices.entries())
+                    .map(([id, price]) => ({ id, price }));
+                
+                const { error: riderUpdateError } = await supabase.from('rider').upsert(ridersToUpdate);
+
+                if (riderUpdateError) {
+                    showToast('Error crítico al actualizar los precios de los pilotos.', 'error');
+                    console.error("Rider price update error:", riderUpdateError);
+                    return;
+                }
+
+                // Mark all processed races as adjusted in the database
+                const raceIdsToUpdate = unprocessedPastRaces.map(r => r.id);
+                const { error: raceUpdateError } = await supabase
+                    .from('races')
+                    .update({ prices_adjusted: true })
+                    .in('id', raceIdsToUpdate);
+
+                if (raceUpdateError) {
+                    showToast('Error al marcar las jornadas como procesadas.', 'error');
+                    console.error("Race status update error:", raceUpdateError);
+                    return;
+                }
+                
+                showToast('Precios de pilotos actualizados. Recargando datos...', 'success');
+                await fetchData(); // Fetch all data again to reflect the changes
+            };
+
+            processPriceAdjustments();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAdmin, loading, races, riders, participants, teamSnapshots]);
+
+
+    const addParticipantToLeague = useCallback(async (name: string, team: Rider[], raceId: number): Promise<boolean> => {
         const team_ids = team.map(r => r.id);
 
         const { data: newParticipant, error: participantError } = await supabase
@@ -184,7 +273,7 @@ const App: React.FC = () => {
 
         const { error: snapshotError } = await supabase
             .from('team_snapshots')
-            .insert({ participant_id: newParticipant.id, team_ids });
+            .insert({ participant_id: newParticipant.id, team_ids, race_id: raceId });
         
         if (snapshotError) {
              console.error('Error creating snapshot:', snapshotError);
@@ -200,32 +289,34 @@ const App: React.FC = () => {
         return true;
     }, [showToast, fetchData]);
 
-    const handleUpdateParticipantTeam = async (participantId: number, team: Rider[]): Promise<boolean> => {
+    const handleUpdateParticipantTeam = async (participantId: number, team: Rider[], raceId: number): Promise<boolean> => {
         const team_ids = team.map(r => r.id);
 
+        // Update the participant's main team_ids to reflect the latest submission
         const { error: updateError } = await supabase
             .from('participants')
             .update({ team_ids })
             .eq('id', participantId);
 
         if (updateError) {
-            console.error('Error updating team:', updateError);
-            showToast('Error al actualizar el equipo.', 'error');
+            console.error('Error updating participant team:', updateError);
+            showToast('Error al actualizar el equipo del participante.', 'error');
             return false;
         }
         
+        // Insert a new snapshot for the specific race
         const { error: snapshotError } = await supabase
             .from('team_snapshots')
-            .insert({ participant_id: participantId, team_ids });
+            .insert({ participant_id: participantId, team_ids, race_id: raceId });
             
         if (snapshotError) {
-            console.error('Error updating snapshot:', snapshotError);
-            showToast('Error al guardar el historial del equipo.', 'error');
-            // Data is now inconsistent, but rolling back is complex. Refetching will show the current state.
+            console.error('Error creating new team snapshot:', snapshotError);
+            showToast('Error al guardar el equipo para esta jornada.', 'error');
+            // Data might be slightly inconsistent, but core functionality remains.
         }
         
         await fetchData();
-        showToast('Equipo actualizado con éxito.', 'success');
+        showToast('Equipo actualizado con éxito para esta jornada.', 'success');
         return true;
     };
 
@@ -259,47 +350,17 @@ const App: React.FC = () => {
         }
     };
     
-    const handleAddRound = async (roundName: string): Promise<void> => {
-        const { data, error } = await supabase
-            .from('rounds')
-            .insert({ name: roundName })
-            .select()
-            .single();
-
-        if (error) {
-            console.error('Error adding round:', error);
-            showToast('Error al crear la jornada. ¿Quizás el nombre ya existe?', 'error');
-        } else if (data) {
-            setRounds(prev => [...prev, data]);
-            showToast(`Jornada '${roundName}' creada.`, 'success');
-        }
-    };
-    
-    const handleUpdateRound = async (round: Round) => {
+    const handleUpdateRace = async (race: Race) => {
         const { error } = await supabase
-            .from('rounds')
-            .update({ name: round.name, round_date: round.round_date })
-            .eq('id', round.id);
+            .from('races')
+            .update({ gp_name: race.gp_name, race_date: race.race_date })
+            .eq('id', race.id);
 
         if (error) {
             showToast('Error al actualizar la jornada.', 'error');
         } else {
-            setRounds(prev => prev.map(r => r.id === round.id ? round : r));
+            setRaces(prev => prev.map(r => r.id === race.id ? race : r));
             showToast('Jornada actualizada.', 'success');
-        }
-    };
-    
-    const handleUpdateMarketDeadline = async (deadline: string | null) => {
-        const { error } = await supabase
-            .from('league_settings')
-            .upsert({ id: 1, market_deadline: deadline });
-
-        if (error) {
-            console.error('Error updating market deadline:', error);
-            showToast('Error al actualizar la fecha límite.', 'error');
-        } else {
-            await fetchData(); // Refetch data to ensure UI consistency
-            showToast('Fecha límite del mercado actualizada.', 'success');
         }
     };
 
@@ -330,14 +391,14 @@ const App: React.FC = () => {
         showToast(`Piloto ${updatedRider.name} actualizado.`, 'success');
     };
 
-    const currentRound = useMemo(() => {
+    const currentRace = useMemo(() => {
         const now = new Date();
-        const futureRounds = rounds
-            .filter(r => r.round_date && new Date(r.round_date) > now)
-            .sort((a, b) => new Date(a.round_date!).getTime() - new Date(b.round_date!).getTime());
+        const futureRaces = races
+            .filter(r => r.race_date && new Date(r.race_date) > now)
+            .sort((a, b) => new Date(a.race_date!).getTime() - new Date(b.race_date!).getTime());
         
-        return futureRounds.length > 0 ? futureRounds[0] : null;
-    }, [rounds]);
+        return futureRaces.length > 0 ? futureRaces[0] : null;
+    }, [races]);
 
 
     if (loading) {
@@ -367,31 +428,31 @@ const App: React.FC = () => {
                     <TeamBuilder 
                         riders={riders}
                         participants={participants}
+                        teamSnapshots={teamSnapshots}
                         onAddToLeague={addParticipantToLeague}
                         onUpdateTeam={handleUpdateParticipantTeam}
                         showToast={showToast}
-                        marketDeadline={leagueSettings?.market_deadline || null}
-                        currentRound={currentRound}
+                        currentRace={currentRace}
                     />
                 )}
                 {view === 'results' && (
                     <Results 
                         participants={participants}
-                        rounds={rounds}
+                        races={races}
                         teamSnapshots={teamSnapshots}
-                        leagueSettings={leagueSettings}
                         riders={riders}
                         isAdmin={isAdmin}
                         onUpdateParticipant={handleUpdateParticipant}
                         onDeleteParticipant={handleDeleteParticipant}
-                        onAddRound={handleAddRound}
-                        onUpdateRound={handleUpdateRound}
-                        onUpdateMarketDeadline={handleUpdateMarketDeadline}
+                        onUpdateRace={handleUpdateRace}
                         onUpdateRider={handleUpdateRider}
                         showToast={showToast}
                         allRiderPoints={allRiderPoints}
                         refetchData={fetchData}
                     />
+                )}
+                {view === 'calendar' && (
+                    <RaceCalendar races={races} />
                 )}
             </main>
             <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Login">

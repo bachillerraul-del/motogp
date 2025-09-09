@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Rider, Participant, Round } from '../types';
+import type { Rider, Participant, Race, TeamSnapshot } from '../types';
 import { TEAM_SIZE, BUDGET, MOTOGP_RIDERS } from '../constants';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
@@ -10,11 +10,11 @@ import { Countdown } from './Countdown';
 interface TeamBuilderProps {
     riders: Rider[];
     participants: Participant[];
-    onAddToLeague: (name: string, team: Rider[]) => Promise<boolean>;
-    onUpdateTeam: (participantId: number, team: Rider[]) => Promise<boolean>;
+    teamSnapshots: TeamSnapshot[];
+    onAddToLeague: (name: string, team: Rider[], raceId: number) => Promise<boolean>;
+    onUpdateTeam: (participantId: number, team: Rider[], raceId: number) => Promise<boolean>;
     showToast: (message: string, type: 'success' | 'error') => void;
-    marketDeadline: string | null;
-    currentRound: Round | null;
+    currentRace: Race | null;
 }
 
 type SaveModalState = 'closed' | 'enterName' | 'confirmUpdate';
@@ -76,7 +76,7 @@ const calculateTimeRemaining = (deadline: Date) => {
     return { days, hours, minutes, seconds };
 };
 
-export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, onAddToLeague, onUpdateTeam, showToast, marketDeadline, currentRound }) => {
+export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, teamSnapshots, onAddToLeague, onUpdateTeam, showToast, currentRace }) => {
     const { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull } = useTeamManagement(showToast);
     
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -84,7 +84,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
     const [participantName, setParticipantName] = useState('');
     const [participantToUpdate, setParticipantToUpdate] = useState<Participant | null>(null);
 
-    const deadlineDate = useMemo(() => marketDeadline ? new Date(marketDeadline) : null, [marketDeadline]);
+    const deadlineDate = useMemo(() => currentRace?.race_date ? new Date(currentRace.race_date) : null, [currentRace]);
     const [marketStatus, setMarketStatus] = useState({ 
         isOpen: true, 
         timeRemaining: { days: 0, hours: 0, minutes: 0, seconds: 0 } 
@@ -176,6 +176,10 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
 
     const handleNameSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentRace) {
+            showToast('No hay una carrera activa para registrar el equipo.', 'error');
+            return;
+        }
         if (!participantName.trim()) {
             showToast('El nombre del participante no puede estar vacío.', 'error');
             return;
@@ -185,10 +189,25 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
         const existingParticipant = participants.find(p => p.name.toLowerCase() === trimmedName.toLowerCase());
 
         if (existingParticipant) {
-            setParticipantToUpdate(existingParticipant);
-            setSaveModalState('confirmUpdate');
+             const hasSubmittedForThisRace = teamSnapshots.some(
+                s => s.participant_id === existingParticipant.id && s.race_id === currentRace.id
+            );
+
+            if (hasSubmittedForThisRace) {
+                setParticipantToUpdate(existingParticipant);
+                setSaveModalState('confirmUpdate');
+            } else {
+                // Not submitted for this race yet, so save a new team for them for this race.
+                const success = await onUpdateTeam(existingParticipant.id, team, currentRace.id);
+                if (success) {
+                    shareTeamOnWhatsapp(team);
+                    clearTeam();
+                    resetSaveModal();
+                }
+            }
         } else {
-            const success = await onAddToLeague(trimmedName, team);
+            // New participant, create them and their first race-specific team
+            const success = await onAddToLeague(trimmedName, team, currentRace.id);
             if (success) {
                 shareTeamOnWhatsapp(team);
                 clearTeam();
@@ -198,8 +217,8 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
     };
 
     const handleConfirmUpdate = async () => {
-        if (!participantToUpdate) return;
-        const success = await onUpdateTeam(participantToUpdate.id, team);
+        if (!participantToUpdate || !currentRace) return;
+        const success = await onUpdateTeam(participantToUpdate.id, team, currentRace.id);
         if (success) {
             shareTeamOnWhatsapp(team);
             clearTeam();
@@ -229,9 +248,9 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
                 )}
                 <div className="mb-6 border-b-2 border-red-600 pb-2 flex justify-between items-end flex-wrap">
                     <h2 className="text-3xl font-bold">Elige tus Pilotos</h2>
-                    {currentRound && (
+                    {currentRace && (
                         <p className="text-md text-gray-300 whitespace-nowrap ml-4 mt-2 sm:mt-0">
-                            Próximo GP: <span className="font-bold text-red-500">{currentRound.name}</span>
+                            Próximo GP: <span className="font-bold text-red-500">{currentRace.gp_name}</span>
                         </p>
                     )}
                 </div>
@@ -319,11 +338,11 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
             <Modal
                 isOpen={saveModalState !== 'closed'}
                 onClose={resetSaveModal}
-                title={saveModalState === 'enterName' ? 'Guardar equipo en la liga' : `Actualizar equipo`}
+                title={saveModalState === 'enterName' ? `Guardar equipo para ${currentRace?.gp_name}` : `Actualizar equipo`}
             >
                 {saveModalState === 'enterName' && (
                     <form onSubmit={handleNameSubmit} className="space-y-4">
-                        <p className="text-gray-300">Introduce tu nombre para añadir tu equipo a la clasificación.</p>
+                        <p className="text-gray-300">Introduce tu nombre para añadir tu equipo a la clasificación de esta jornada.</p>
                         <div>
                            <label htmlFor="participant-name" className="block text-sm font-medium text-gray-300 mb-1">Nombre del Participante</label>
                             <input
@@ -343,7 +362,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
                 )}
                 {saveModalState === 'confirmUpdate' && participantToUpdate && (
                     <div className="space-y-4 text-center">
-                        <p className="text-gray-300">El participante <strong className="text-white">{participantToUpdate.name}</strong> ya existe.</p>
+                        <p className="text-gray-300">El participante <strong className="text-white">{participantToUpdate.name}</strong> ya tiene un equipo para <strong className="text-white">{currentRace?.gp_name}</strong>.</p>
                         <p>¿Deseas actualizar su equipo con tu selección actual?</p>
                         <div className="flex gap-4 pt-2">
                              <button onClick={resetSaveModal} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">

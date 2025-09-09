@@ -1,4 +1,3 @@
-
 export interface Rider {
     id: number;
     name: string;
@@ -14,23 +13,21 @@ export interface Participant {
     team_ids: number[];
 }
 
-export interface Round {
-    id: number;
-    name: string;
-    created_at: string;
-    round_date: string | null;
-}
-
 export interface TeamSnapshot {
     id: number;
     participant_id: number;
     team_ids: number[];
     created_at: string;
+    race_id: number | null;
 }
 
-export interface LeagueSettings {
+export interface Race {
     id: number;
-    market_deadline: string | null;
+    round: number;
+    gp_name: string;
+    location: string;
+    race_date: string;
+    prices_adjusted: boolean;
 }
 
 export type RiderRoundPoints = number;
