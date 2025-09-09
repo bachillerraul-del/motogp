@@ -1,9 +1,9 @@
 import React from 'react';
-import { MotoIcon, LoginIcon, LogoutIcon, ShieldCheckIcon, CalendarIcon } from './Icons';
+import { MotoIcon, LoginIcon, LogoutIcon, ShieldCheckIcon, HomeIcon } from './Icons';
 
 interface HeaderProps {
-    currentView: 'builder' | 'results' | 'calendar';
-    setView: (view: 'builder' | 'results' | 'calendar') => void;
+    currentView: 'home' | 'builder' | 'results';
+    setView: (view: 'home' | 'builder' | 'results') => void;
     isAdmin: boolean;
     onAdminLogin: () => void;
     onAdminLogout: () => void;
@@ -28,6 +28,13 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, o
                 <div className="flex items-center space-x-2 md:space-x-4">
                     <nav className="flex items-center space-x-2 bg-gray-900 p-1 rounded-lg">
                         <button 
+                            onClick={() => setView('home')}
+                            className={`${navButtonStyle} ${currentView === 'home' ? activeButtonStyle : inactiveButtonStyle}`}
+                        >
+                            <HomeIcon className="w-5 h-5" />
+                            <span className="hidden sm:inline">Inicio</span>
+                        </button>
+                        <button 
                             onClick={() => setView('builder')}
                             className={`${navButtonStyle} ${currentView === 'builder' ? activeButtonStyle : inactiveButtonStyle}`}
                         >
@@ -38,13 +45,6 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, o
                             className={`${navButtonStyle} ${currentView === 'results' ? activeButtonStyle : inactiveButtonStyle}`}
                         >
                             Resultados
-                        </button>
-                        <button 
-                            onClick={() => setView('calendar')}
-                            className={`${navButtonStyle} ${currentView === 'calendar' ? activeButtonStyle : inactiveButtonStyle}`}
-                        >
-                            <CalendarIcon className="w-5 h-5" />
-                            <span className="hidden sm:inline">Calendario</span>
                         </button>
                     </nav>
 

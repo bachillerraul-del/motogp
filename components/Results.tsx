@@ -5,7 +5,8 @@ import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
 import { Leaderboard } from './Leaderboard';
 import { RiderLeaderboard } from './RiderLeaderboard';
-import { TrophyIcon } from './Icons';
+import { TrophyIcon, CogIcon, UsersIcon, ChartBarIcon } from './Icons';
+import { getTeamForRace } from '../lib/utils';
 
 // Modal for rider point details
 interface RiderDetailModalProps {
@@ -80,14 +81,6 @@ interface ResultsProps {
     refetchData: () => void;
 }
 
-const getTeamForRace = (participantId: number, raceId: number, snapshots: TeamSnapshot[]): number[] => {
-    const raceSnapshots = snapshots
-        .filter(s => s.participant_id === participantId && s.race_id === raceId)
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        
-    return raceSnapshots.length > 0 ? raceSnapshots[0].team_ids : [];
-};
-
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
         participants, races, teamSnapshots, riders, isAdmin, 
@@ -99,6 +92,10 @@ export const Results: React.FC<ResultsProps> = (props) => {
     const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
     const [selectedRiderDetails, setSelectedRiderDetails] = useState<RiderWithScore | null>(null);
     const defaultViewIsSet = useRef(false);
+    
+    // Mobile-specific state
+    const [mobileView, setMobileView] = useState<'leaderboard' | 'riders'>('leaderboard');
+    const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
     
     // Modal States
     const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
@@ -220,40 +217,87 @@ export const Results: React.FC<ResultsProps> = (props) => {
     }, [leaderboardView, races]);
 
     return (
-        <div className="flex flex-col lg:flex-row gap-8">
+        <div>
             {isAdmin && (
-                <AdminPanel
-                    races={races}
-                    selectedRace={selectedRaceForEditing}
-                    onSelectRace={setSelectedRaceForEditing}
-                    onUpdateRace={onUpdateRace}
-                    onClearPoints={() => setIsConfirmingClearPoints(true)}
-                    riders={riders}
-                    riderPoints={allRiderPoints}
-                    onPointChange={handlePointChange}
-                    onUpdateRider={onUpdateRider}
-                    showToast={showToast}
-                />
+                <div className="mb-6 lg:hidden">
+                    <button
+                        onClick={() => setIsAdminPanelOpen(!isAdminPanelOpen)}
+                        className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300"
+                        aria-expanded={isAdminPanelOpen}
+                        aria-controls="admin-panel"
+                    >
+                        <CogIcon className="w-5 h-5" />
+                        {isAdminPanelOpen ? 'Ocultar Panel de Administrador' : 'Mostrar Panel de Administrador'}
+                    </button>
+                </div>
             )}
 
-            <Leaderboard
-                participants={sortedParticipants}
-                races={races}
-                leaderboardView={leaderboardView}
-                onLeaderboardViewChange={setLeaderboardView}
-                isAdmin={isAdmin}
-                onDeleteParticipant={setParticipantToDelete}
-                onUpdateParticipant={onUpdateParticipant}
-                allRiderPoints={allRiderPoints}
-                teamSnapshots={teamSnapshots}
-                riders={riders}
-            />
+            <div className="flex flex-col lg:flex-row gap-8">
+                {isAdmin && (
+                    <div id="admin-panel" className={`${isAdminPanelOpen ? 'block' : 'hidden'} lg:block w-full lg:w-1/3 transition-all duration-300`}>
+                        {/* FIX: Pass correct props to AdminPanel to satisfy its interface and fix TypeScript error. */}
+                        <AdminPanel
+                            races={races}
+                            selectedRace={selectedRaceForEditing}
+                            onSelectRace={setSelectedRaceForEditing}
+                            onUpdateRace={onUpdateRace}
+                            onClearPoints={() => setIsConfirmingClearPoints(true)}
+                            riders={riders}
+                            riderPoints={allRiderPoints}
+                            onPointChange={handlePointChange}
+                            onUpdateRider={onUpdateRider}
+                            showToast={showToast}
+                        />
+                    </div>
+                )}
+                
+                <div className="flex-grow">
+                     {/* Mobile Tabs */}
+                    <div className="mb-4 flex lg:hidden rounded-lg bg-gray-800 p-1 border border-gray-700">
+                        <button
+                            onClick={() => setMobileView('leaderboard')}
+                            className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'leaderboard' ? 'bg-red-600 text-white' : 'text-gray-300'}`}
+                        >
+                            <UsersIcon className="w-5 h-5" />
+                            Clasificación
+                        </button>
+                        <button
+                            onClick={() => setMobileView('riders')}
+                            className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'riders' ? 'bg-red-600 text-white' : 'text-gray-300'}`}
+                        >
+                            <ChartBarIcon className="w-5 h-5" />
+                            Pilotos
+                        </button>
+                    </div>
 
-            <RiderLeaderboard
-                riders={sortedRiders}
-                onRiderClick={setSelectedRiderDetails}
-                title={riderLeaderboardTitle}
-            />
+                    <div className="lg:flex lg:gap-8">
+                        {/* Leaderboard Column - visible on mobile if tab is active */}
+                        <div className={`w-full lg:flex-grow ${mobileView === 'leaderboard' ? 'block' : 'hidden'} lg:block`}>
+                            <Leaderboard
+                                participants={sortedParticipants}
+                                races={races}
+                                leaderboardView={leaderboardView}
+                                onLeaderboardViewChange={setLeaderboardView}
+                                isAdmin={isAdmin}
+                                onDeleteParticipant={setParticipantToDelete}
+                                onUpdateParticipant={onUpdateParticipant}
+                                allRiderPoints={allRiderPoints}
+                                teamSnapshots={teamSnapshots}
+                                riders={riders}
+                            />
+                        </div>
+
+                         {/* Rider Leaderboard Column - visible on mobile if tab is active */}
+                        <div className={`w-full lg:w-1/4 ${mobileView === 'riders' ? 'block' : 'hidden'} lg:block`}>
+                            <RiderLeaderboard
+                                riders={sortedRiders}
+                                onRiderClick={setSelectedRiderDetails}
+                                title={riderLeaderboardTitle}
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
             
             <RiderDetailModal 
                 rider={selectedRiderDetails}

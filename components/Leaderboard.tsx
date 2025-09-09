@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Rider, Participant, Race, TeamSnapshot } from '../types';
 import { TEAM_SIZE } from '../constants';
 import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon } from './Icons';
+import { getTeamForRace } from '../lib/utils';
 
 type AllRiderPoints = Record<number, Record<number, number>>;
 
@@ -20,14 +21,6 @@ interface LeaderboardProps {
     teamSnapshots: TeamSnapshot[];
     riders: Rider[];
 }
-
-const getTeamForRace = (participantId: number, raceId: number, snapshots: TeamSnapshot[]): number[] => {
-    const raceSnapshots = snapshots
-        .filter(s => s.participant_id === participantId && s.race_id === raceId)
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        
-    return raceSnapshots.length > 0 ? raceSnapshots[0].team_ids : [];
-};
 
 export const Leaderboard: React.FC<LeaderboardProps> = ({
     participants,
@@ -84,12 +77,12 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
 
     return (
         <div className="flex-grow">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
                 <h2 className="text-2xl font-bold">{getTitle()}</h2>
                 <select
                     value={leaderboardView}
                     onChange={e => onLeaderboardViewChange(e.target.value === 'general' ? 'general' : Number(e.target.value))}
-                    className="bg-gray-800 text-white p-2 rounded-md"
+                    className="bg-gray-800 text-white p-2 rounded-md w-full sm:w-auto"
                 >
                     <option value="general">Clasificación General</option>
                     <optgroup label="Por Jornada">

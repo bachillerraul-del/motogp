@@ -21,6 +21,13 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #ef4444; /* bg-red-500 */
       }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fadeIn {
+        animation: fadeIn 0.5s ease-out forwards;
+      }
     </style>
 <script type="importmap">
 {
