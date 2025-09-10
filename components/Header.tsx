@@ -1,5 +1,6 @@
 import React from 'react';
-import { MotoIcon, LoginIcon, LogoutIcon, ShieldCheckIcon, HomeIcon } from './Icons';
+import { MotoIcon, LoginIcon, LogoutIcon, ShieldCheckIcon, HomeIcon, UserIcon } from './Icons';
+import type { Participant } from '../types';
 
 interface HeaderProps {
     currentView: 'home' | 'builder' | 'results';
@@ -7,9 +8,11 @@ interface HeaderProps {
     isAdmin: boolean;
     onAdminLogin: () => void;
     onAdminLogout: () => void;
+    currentUser: Participant | null;
+    onUserLogout: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, onAdminLogin, onAdminLogout }) => {
+export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, onAdminLogin, onAdminLogout, currentUser, onUserLogout }) => {
     
     const navButtonStyle = "px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 flex items-center gap-2";
     const activeButtonStyle = "bg-red-600 text-white";
@@ -47,6 +50,18 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, o
                             Resultados
                         </button>
                     </nav>
+
+                    {currentUser && (
+                         <div className="flex items-center space-x-2 bg-gray-900 p-1 rounded-lg">
+                            <span className="flex items-center text-gray-300 px-3 py-1.5 text-sm">
+                                <UserIcon className="w-5 h-5 mr-2" />
+                                {currentUser.name}
+                            </span>
+                            <button onClick={onUserLogout} className="text-gray-300 hover:bg-gray-700 hover:text-white p-2 rounded-md" aria-label="Cerrar sesión">
+                                <LogoutIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+                    )}
 
                     {isAdmin ? (
                         <div className="flex items-center space-x-2 bg-gray-900 p-1 rounded-lg">

@@ -13,10 +13,11 @@ type View = 'home' | 'builder' | 'results';
 const Home = lazy(() => import('./components/Home').then(module => ({ default: module.Home })));
 const TeamBuilder = lazy(() => import('./components/TeamBuilder').then(module => ({ default: module.TeamBuilder })));
 const Results = lazy(() => import('./components/Results').then(module => ({ default: module.Results })));
+const Login = lazy(() => import('./components/Login').then(module => ({ default: module.Login })));
 
 
 const LoadingSpinner: React.FC<{ message: string }> = ({ message }) => (
-    <div className="min-h-[calc(100vh-200px)] text-white flex flex-col items-center justify-center">
+    <div className="min-h-screen text-white flex flex-col items-center justify-center bg-gray-900">
         <svg className="animate-spin h-10 w-10 text-red-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -35,6 +36,11 @@ const App: React.FC = () => {
     const [loginPassword, setLoginPassword] = useState('');
     const [loginError, setLoginError] = useState<string | null>(null);
     const isAdmin = !!session;
+
+    // Participant State
+    const [currentUser, setCurrentUser] = useState<Participant | null>(null);
+    const [isNewUserFlow, setIsNewUserFlow] = useState(false);
+    const [newUserName, setNewUserName] = useState<string | null>(null);
 
     const {
         participants, races, teamSnapshots, riders, allRiderPoints, loading, toast, setToast,
@@ -73,9 +79,29 @@ const App: React.FC = () => {
         }
     };
 
-    const handleLogout = async () => {
+    const handleAdminLogout = async () => {
         await supabase.auth.signOut();
         showToast('Modo administrador desactivado.', 'success');
+    };
+
+    const handleUserLogin = (participant: Participant) => {
+        setCurrentUser(participant);
+        setIsNewUserFlow(false);
+        setNewUserName(null);
+        showToast(`¡Hola, ${participant.name}!`, 'success');
+    };
+
+    const handleUserLogout = () => {
+        setCurrentUser(null);
+        setIsNewUserFlow(false);
+        setNewUserName(null);
+        showToast('Has cerrado sesión.', 'success');
+    };
+
+    const handleGoToBuilderForNew = (name: string) => {
+        setNewUserName(name);
+        setIsNewUserFlow(true);
+        setView('builder');
     };
     
     // Effect for automatic price adjustments, runs only for admins
@@ -155,14 +181,31 @@ const App: React.FC = () => {
         return <LoadingSpinner message="Cargando datos de la liga..." />;
     }
 
-    // A small wrapper to handle view change after adding a participant.
     const addParticipantAndSwitchView = async (name: string, team: Rider[], raceId: number): Promise<boolean> => {
-        const success = await addParticipantToLeague(name, team, raceId);
-        if (success) {
+        const newParticipant = await addParticipantToLeague(name, team, raceId);
+        if (newParticipant) {
             setView('results');
+            handleUserLogin(newParticipant);
+            return true;
         }
-        return success;
+        return false;
     };
+
+    if (!currentUser && !isNewUserFlow) {
+        return (
+            <>
+                <Toast toast={toast} onClose={() => setToast(null)} />
+                <Suspense fallback={<LoadingSpinner message="Cargando..." />}>
+                    <Login
+                        participants={participants}
+                        onLogin={handleUserLogin}
+                        onGoToBuilderForNew={handleGoToBuilderForNew}
+                    />
+                </Suspense>
+            </>
+        );
+    }
+
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
@@ -172,7 +215,9 @@ const App: React.FC = () => {
                 setView={setView} 
                 isAdmin={isAdmin}
                 onAdminLogin={() => setIsLoginModalOpen(true)}
-                onAdminLogout={handleLogout}
+                onAdminLogout={handleAdminLogout}
+                currentUser={currentUser}
+                onUserLogout={handleUserLogout}
             />
             <main className="container mx-auto p-4 md:p-8">
                  <Suspense fallback={<LoadingSpinner message={`Cargando ${view}...`} />}>
@@ -192,6 +237,8 @@ const App: React.FC = () => {
                             onUpdateTeam={handleUpdateParticipantTeam}
                             showToast={showToast}
                             currentRace={currentRace}
+                            currentUser={currentUser}
+                            newUserName={newUserName}
                         />
                     )}
                     {view === 'results' && (

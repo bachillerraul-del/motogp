@@ -101,7 +101,7 @@ export const useFantasyData = () => {
         fetchData();
     }, [fetchData]);
     
-    const addParticipantToLeague = useCallback(async (name: string, team: Rider[], raceId: number): Promise<boolean> => {
+    const addParticipantToLeague = useCallback(async (name: string, team: Rider[], raceId: number): Promise<Participant | null> => {
         const team_ids = team.map(r => r.id);
 
         const { data: newParticipant, error: participantError } = await supabase
@@ -113,7 +113,7 @@ export const useFantasyData = () => {
         if (participantError || !newParticipant) {
             console.error('Error adding participant:', participantError);
             showToast('Error al añadir participante. ¿Quizás el nombre ya existe?', 'error');
-            return false;
+            return null;
         }
 
         const { error: snapshotError } = await supabase
@@ -125,12 +125,12 @@ export const useFantasyData = () => {
              showToast('Error al guardar el historial del equipo.', 'error');
              // Attempt to roll back participant creation for consistency
              await supabase.from('participants').delete().eq('id', newParticipant.id);
-             return false;
+             return null;
         }
         
         await fetchData(); // Refetch all data to ensure consistency
         showToast(`'${name}' ha sido añadido a la liga.`, 'success');
-        return true;
+        return newParticipant;
     }, [showToast, fetchData]);
 
     const handleUpdateParticipantTeam = useCallback(async (participantId: number, team: Rider[], raceId: number): Promise<boolean> => {

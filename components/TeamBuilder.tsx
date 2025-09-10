@@ -4,7 +4,6 @@ import { TEAM_SIZE, BUDGET, MOTOGP_RIDERS } from '../constants';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
 import { CloseIcon } from './Icons';
-import { Modal } from './Modal';
 import { Countdown } from './Countdown';
 
 interface TeamBuilderProps {
@@ -15,9 +14,9 @@ interface TeamBuilderProps {
     onUpdateTeam: (participantId: number, team: Rider[], raceId: number) => Promise<boolean>;
     showToast: (message: string, type: 'success' | 'error') => void;
     currentRace: Race | null;
+    currentUser: Participant | null;
+    newUserName: string | null;
 }
-
-type SaveModalState = 'closed' | 'enterName' | 'confirmUpdate';
 
 const useTeamManagement = (showToast: TeamBuilderProps['showToast']) => {
     const [team, setTeam] = useState<Rider[]>([]);
@@ -76,13 +75,10 @@ const calculateTimeRemaining = (deadline: Date) => {
     return { days, hours, minutes, seconds };
 };
 
-export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, teamSnapshots, onAddToLeague, onUpdateTeam, showToast, currentRace }) => {
+export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, teamSnapshots, onAddToLeague, onUpdateTeam, showToast, currentRace, currentUser, newUserName }) => {
     const { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull } = useTeamManagement(showToast);
     
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-    const [saveModalState, setSaveModalState] = useState<SaveModalState>('closed');
-    const [participantName, setParticipantName] = useState('');
-    const [participantToUpdate, setParticipantToUpdate] = useState<Participant | null>(null);
 
     const deadlineDate = useMemo(() => currentRace?.race_date ? new Date(currentRace.race_date) : null, [currentRace]);
     const [marketStatus, setMarketStatus] = useState({ 
@@ -158,74 +154,55 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
         return [...available, ...unavailable];
     }, [team, riders]);
 
-    const resetSaveModal = () => {
-        setSaveModalState('closed');
-        setParticipantName('');
-        setParticipantToUpdate(null);
-    };
-
     const handleSaveAndShareClick = () => {
         if (!marketStatus.isOpen) {
             showToast('El mercado está cerrado. No se pueden hacer cambios.', 'error');
             return;
         }
-        if (team.length === TEAM_SIZE) {
-            setSaveModalState('enterName');
+        if (team.length !== TEAM_SIZE) {
+            showToast(`Debes seleccionar ${TEAM_SIZE} pilotos.`, 'error');
+            return;
         }
-    };
-
-    const handleNameSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
         if (!currentRace) {
             showToast('No hay una carrera activa para registrar el equipo.', 'error');
             return;
         }
-        if (!participantName.trim()) {
-            showToast('El nombre del participante no puede estar vacío.', 'error');
-            return;
-        }
 
-        const trimmedName = participantName.trim();
-        const existingParticipant = participants.find(p => p.name.toLowerCase() === trimmedName.toLowerCase());
-
-        if (existingParticipant) {
-             const hasSubmittedForThisRace = teamSnapshots.some(
-                s => s.participant_id === existingParticipant.id && s.race_id === currentRace.id
-            );
-
-            if (hasSubmittedForThisRace) {
-                setParticipantToUpdate(existingParticipant);
-                setSaveModalState('confirmUpdate');
-            } else {
-                // Not submitted for this race yet, so save a new team for them for this race.
-                const success = await onUpdateTeam(existingParticipant.id, team, currentRace.id);
+        if (currentUser) {
+            const updateAndShare = async () => {
+                const success = await onUpdateTeam(currentUser.id, team, currentRace.id);
                 if (success) {
                     shareTeamOnWhatsapp(team);
                     clearTeam();
-                    resetSaveModal();
                 }
-            }
+            };
+            updateAndShare();
+        } else if (newUserName) {
+            // New user flow
+            const createAndShare = async () => {
+                const success = await onAddToLeague(newUserName, team, currentRace.id);
+                if (success) {
+                    shareTeamOnWhatsapp(team);
+                    clearTeam();
+                }
+            };
+            createAndShare();
         } else {
-            // New participant, create them and their first race-specific team
-            const success = await onAddToLeague(trimmedName, team, currentRace.id);
-            if (success) {
-                shareTeamOnWhatsapp(team);
-                clearTeam();
-                resetSaveModal();
-            }
-        }
-    };
-
-    const handleConfirmUpdate = async () => {
-        if (!participantToUpdate || !currentRace) return;
-        const success = await onUpdateTeam(participantToUpdate.id, team, currentRace.id);
-        if (success) {
-            shareTeamOnWhatsapp(team);
-            clearTeam();
-            resetSaveModal();
+            console.error("Attempted to save a team without a currentUser or newUserName.");
+            showToast('Error inesperado. No se pudo identificar al usuario.', 'error');
         }
     };
     
+    const builderTitle = useMemo(() => {
+        if (currentUser) {
+            return `Editando equipo de ${currentUser.name}`;
+        }
+        if (newUserName) {
+            return `Creando equipo para ${newUserName}`;
+        }
+        return 'Elige tus Pilotos';
+    }, [currentUser, newUserName]);
+
     return (
         <div className="flex flex-col lg:flex-row gap-8">
             <div className="flex-grow pb-24 lg:pb-0">
@@ -247,7 +224,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
                     </div>
                 )}
                 <div className="mb-6 border-b-2 border-red-600 pb-2 flex justify-between items-end flex-wrap">
-                    <h2 className="text-3xl font-bold">Elige tus Pilotos</h2>
+                    <h2 className="text-3xl font-bold">{builderTitle}</h2>
                     {currentRace && (
                         <p className="text-md text-gray-300 whitespace-nowrap ml-4 mt-2 sm:mt-0">
                             Próximo GP: <span className="font-bold text-red-500">{currentRace.gp_name}</span>
@@ -334,47 +311,6 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, 
                     </div>
                 </div>
             </div>
-            
-            <Modal
-                isOpen={saveModalState !== 'closed'}
-                onClose={resetSaveModal}
-                title={saveModalState === 'enterName' ? `Guardar equipo para ${currentRace?.gp_name}` : `Actualizar equipo`}
-            >
-                {saveModalState === 'enterName' && (
-                    <form onSubmit={handleNameSubmit} className="space-y-4">
-                        <p className="text-gray-300">Introduce tu nombre para añadir tu equipo a la clasificación de esta jornada.</p>
-                        <div>
-                           <label htmlFor="participant-name" className="block text-sm font-medium text-gray-300 mb-1">Nombre del Participante</label>
-                            <input
-                                id="participant-name"
-                                type="text"
-                                value={participantName}
-                                onChange={(e) => setParticipantName(e.target.value)}
-                                className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
-                                required
-                                autoFocus
-                            />
-                        </div>
-                        <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
-                            Guardar Equipo
-                        </button>
-                    </form>
-                )}
-                {saveModalState === 'confirmUpdate' && participantToUpdate && (
-                    <div className="space-y-4 text-center">
-                        <p className="text-gray-300">El participante <strong className="text-white">{participantToUpdate.name}</strong> ya tiene un equipo para <strong className="text-white">{currentRace?.gp_name}</strong>.</p>
-                        <p>¿Deseas actualizar su equipo con tu selección actual?</p>
-                        <div className="flex gap-4 pt-2">
-                             <button onClick={resetSaveModal} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
-                                Cancelar
-                            </button>
-                            <button onClick={handleConfirmUpdate} className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
-                                Sí, Actualizar
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </Modal>
         </div>
     );
 };
