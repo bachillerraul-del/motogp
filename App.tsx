@@ -31,7 +31,7 @@ const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelec
                 className="bg-gray-800 rounded-lg p-8 text-center transition-all duration-300 hover:bg-red-600 hover:scale-105 cursor-pointer shadow-lg flex flex-col items-center gap-4"
                 role="button"
             >
-                <MotoIcon className="w-16 h-16 text-red-500"/>
+                <MotoIcon className="text-7xl"/>
                 <h2 className="text-3xl font-bold text-white">MotoGP</h2>
             </div>
             <div
@@ -39,7 +39,7 @@ const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelec
                 className="bg-gray-800 rounded-lg p-8 text-center transition-all duration-300 hover:bg-red-600 hover:scale-105 cursor-pointer shadow-lg flex flex-col items-center gap-4"
                 role="button"
             >
-                <F1Icon className="w-16 h-16 text-red-500"/>
+                <F1Icon className="text-7xl"/>
                 <h2 className="text-3xl font-bold text-white">Formula 1</h2>
             </div>
         </div>

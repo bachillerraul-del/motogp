@@ -53,7 +53,7 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
         <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 animate-fadeIn">
             <header className="text-center mb-10">
                 <div className="flex justify-center items-center gap-4 mb-4">
-                    <SportIcon className="w-12 h-12 text-red-600"/>
+                    <SportIcon className="text-5xl"/>
                     <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white uppercase">
                         <span className="text-red-600">{sportName}</span> Fantasy
                     </h1>

@@ -51,7 +51,7 @@ const ShareTeamCard: React.FC<ShareTeamCardProps> = ({ participant, teamRiders, 
                     <p className="text-sm text-gray-400">Fantasy Team</p>
                 </div>
                 <div className="text-right">
-                     <SportIcon className="w-10 h-10 text-red-500 mb-1"/>
+                     <SportIcon className="text-4xl mb-1"/>
                      <p className="font-bold text-red-500">{sportName}</p>
                 </div>
             </div>

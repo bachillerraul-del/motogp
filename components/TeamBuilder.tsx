@@ -141,6 +141,10 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
         }
     }, [team, remainingBudget, riders, teamRiderIds, sport, showToast]);
 
+    const formatPrice = (price: number): string => {
+        const value = currencySuffix === 'M' ? (price / 10).toFixed(1) : price.toLocaleString('es-ES');
+        return `${currencyPrefix}${value}${currencySuffix}`;
+    }
 
     if (!currentRace) {
         return (
@@ -155,7 +159,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
     const submitButtonText = currentUser ? 'Actualizar Equipo' : 'Unirse a la Liga';
 
     return (
-        <div className="flex flex-col lg:flex-row gap-8">
+        <div className="flex flex-col lg:flex-row gap-8 pb-24 lg:pb-0">
             <div className="w-full lg:w-1/3 xl:w-1/4">
                 <TeamSidebar
                     team={team}
@@ -167,14 +171,11 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
                     newUserName={newUserName}
                     currencyPrefix={currencyPrefix}
                     currencySuffix={currencySuffix}
+                    isTeamValid={isTeamValid}
+                    isSubmitting={isSubmitting}
+                    submitButtonText={submitButtonText}
+                    onSubmit={handleSubmit}
                 />
-                 <button
-                    onClick={handleSubmit}
-                    disabled={!isTeamValid || isSubmitting}
-                    className="mt-4 w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors duration-300 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
-                >
-                    {isSubmitting ? 'Guardando...' : submitButtonText}
-                </button>
             </div>
 
             <div className="flex-grow min-w-0">
@@ -238,6 +239,31 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
                             currencySuffix={currencySuffix}
                         />
                     ))}
+                </div>
+            </div>
+            
+            {/* Mobile Summary Bar */}
+            <div className="fixed bottom-0 left-0 right-0 bg-gray-800 p-3 border-t border-gray-700 shadow-[0_-4px_10px_rgba(0,0,0,0.3)] z-30 lg:hidden animate-fadeIn">
+                 <div className="container mx-auto flex items-center justify-between gap-4">
+                    <div className="text-center">
+                        <p className="text-xs text-gray-400 uppercase">Presupuesto</p>
+                        <p className={`text-lg font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>
+                            {formatPrice(remainingBudget)}
+                        </p>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-xs text-gray-400 uppercase">Pilotos</p>
+                        <p className={`text-lg font-bold ${team.length === TEAM_SIZE ? 'text-green-400' : 'text-yellow-400'}`}>
+                            {team.length}/{TEAM_SIZE}
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleSubmit}
+                        disabled={!isTeamValid || isSubmitting}
+                        className="bg-green-600 text-white font-bold py-3 px-5 rounded-lg transition-colors duration-300 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed flex-shrink-0"
+                    >
+                        {isSubmitting ? '...' : submitButtonText}
+                    </button>
                 </div>
             </div>
         </div>

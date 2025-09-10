@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, o
                     className="flex items-center gap-3 p-2 -m-2 rounded-lg transition-colors duration-200 hover:bg-gray-700 group"
                     aria-label={`Cambiar a ${sport === 'motogp' ? 'Formula 1' : 'MotoGP'}`}
                 >
-                    <SportIcon className="w-8 h-8 text-red-600"/>
+                    <SportIcon className="text-3xl"/>
                     <div className="flex items-center">
                         <h1 className="text-xl md:text-2xl font-bold tracking-tight text-white uppercase hidden sm:block">
                             <span className="text-red-600">{sportName}</span> Fantasy

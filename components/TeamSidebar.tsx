@@ -12,6 +12,10 @@ interface TeamSidebarProps {
     newUserName: string | null;
     currencyPrefix: string;
     currencySuffix: string;
+    isTeamValid: boolean;
+    isSubmitting: boolean;
+    submitButtonText: string;
+    onSubmit: () => void;
 }
 
 export const TeamSidebar: React.FC<TeamSidebarProps> = ({
@@ -24,6 +28,10 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
     newUserName,
     currencyPrefix,
     currencySuffix,
+    isTeamValid,
+    isSubmitting,
+    submitButtonText,
+    onSubmit,
 }) => {
     const isTeamFull = team.length === teamSize;
     const isBudgetExceeded = remainingBudget < 0;
@@ -112,6 +120,14 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
                 </div>
                 {renderValidationMessage()}
             </div>
+            
+            <button
+                onClick={onSubmit}
+                disabled={!isTeamValid || isSubmitting}
+                className="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors duration-300 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+            >
+                {isSubmitting ? 'Guardando...' : submitButtonText}
+            </button>
         </aside>
     );
 };
