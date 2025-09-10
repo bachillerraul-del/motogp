@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import type { Rider, Race } from '../types';
-import { PencilIcon, MagnifyingGlassIcon } from './Icons';
+import type { Rider, Race, Sport } from '../types';
+import { PencilIcon, MagnifyingGlassIcon, SparklesIcon } from './Icons';
 import { Modal } from './Modal';
 import { fetchRaceResultsFromAI } from '../services/geminiService';
 
@@ -17,6 +17,7 @@ interface AdminPanelProps {
     onPointChange: (riderId: number, points: string) => Promise<void>;
     onUpdateRider: (rider: Rider) => Promise<void>;
     showToast: (message: string, type: 'success' | 'error') => void;
+    sport: Sport;
 }
 
 const formatDatetimeLocal = (dateStr: string | null | undefined): string => {
@@ -32,7 +33,7 @@ const formatDatetimeLocal = (dateStr: string | null | undefined): string => {
 export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
         races, selectedRace, onSelectRace, onUpdateRace, onClearPoints,
-        riders, riderPoints, onPointChange, onUpdateRider, showToast
+        riders, riderPoints, onPointChange, onUpdateRider, showToast, sport
     } = props;
 
     const [editedRaceDate, setEditedRaceDate] = useState('');
@@ -105,7 +106,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         try {
             const riderNames = riders.map(r => r.name);
             const currentYear = new Date().getFullYear();
-            const aiResults = await fetchRaceResultsFromAI(selectedRace.gp_name, riderNames, currentYear);
+            const aiResults = await fetchRaceResultsFromAI(selectedRace.gp_name, riderNames, currentYear, sport);
             
             if (!aiResults || aiResults.length === 0) {
                 showToast('La IA no devolvió resultados para esta jornada.', 'success');
@@ -147,98 +148,99 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
 
     const currentRiderPoints = selectedRace ? riderPoints[selectedRace.id] || {} : {};
+    const sortedRaces = [...races].sort((a,b) => a.round - b.round);
 
     return (
-        <aside className="w-full lg:w-1/3">
-            <div className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
-                {/* Rider Editor */}
-                <div>
-                    <h2 className="text-xl font-bold mb-2">Editar Pilotos</h2>
-                    <div className="max-h-[25vh] overflow-y-auto pr-2 space-y-2">
-                        {riders.map(rider => (
-                            <div key={rider.id} className="bg-gray-900/50 p-2 rounded-md flex justify-between items-center">
-                                <div>
-                                    <p className="font-semibold">{rider.name}</p>
-                                    <p className="text-xs text-gray-400">€{rider.price.toLocaleString('es-ES')}</p>
-                                </div>
-                                <button onClick={() => setEditingRider(rider)} className="p-2 text-gray-400 hover:text-white transition-colors">
-                                    <PencilIcon className="w-5 h-5"/>
-                                </button>
+        <aside className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
+            {/* Rider Editor */}
+            <div>
+                <h2 className="text-xl font-bold mb-2">Editar Pilotos</h2>
+                <div className="max-h-[25vh] overflow-y-auto pr-2 space-y-2">
+                    {riders.map(rider => (
+                        <div key={rider.id} className="bg-gray-900/50 p-2 rounded-md flex justify-between items-center">
+                            <div>
+                                <p className="font-semibold">{rider.name}</p>
+                                <p className="text-xs text-gray-400">
+                                    {sport === 'f1' ? `$${(rider.price/10).toFixed(1)}M` : `€${rider.price.toLocaleString('es-ES')}`}
+                                </p>
                             </div>
-                        ))}
+                            <button onClick={() => setEditingRider(rider)} className="p-2 text-gray-400 hover:text-white transition-colors">
+                                <PencilIcon className="w-5 h-5"/>
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Points Editor */}
+            <div className="border-t border-gray-700 pt-4">
+                 <div className="flex justify-between items-center mb-2">
+                    <h2 className="text-xl font-bold">Editar Puntos</h2>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handleFetchPointsWithAI} 
+                            disabled={!selectedRace || isFetchingPoints} 
+                            className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isFetchingPoints ? (
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            ) : (
+                                <SparklesIcon className="w-4 h-4" />
+                            )}
+                            <span>{isFetchingPoints ? 'Buscando...' : 'Buscar Puntos'}</span>
+                        </button>
+                        <button onClick={onClearPoints} disabled={!selectedRace} className="text-sm text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Limpiar</button>
                     </div>
                 </div>
+                <select
+                    value={selectedRace?.id ?? ''}
+                    onChange={(e) => {
+                        const race = races.find(r => r.id === Number(e.target.value));
+                        if (race) onSelectRace(race);
+                    }}
+                    className="w-full bg-gray-900 text-white p-2 rounded-md mb-2"
+                    disabled={races.length === 0}
+                >
+                    <option value="" disabled>{races.length === 0 ? 'No hay carreras en el calendario' : 'Selecciona jornada...'}</option>
+                    {sortedRaces.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
+                </select>
 
-                {/* Points Editor */}
-                <div className="border-t border-gray-700 pt-4">
-                     <div className="flex justify-between items-center mb-2">
-                        <h2 className="text-xl font-bold">Editar Puntos</h2>
-                        <div className="flex items-center gap-2">
-                            <button 
-                                onClick={handleFetchPointsWithAI} 
-                                disabled={!selectedRace || isFetchingPoints} 
-                                className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isFetchingPoints ? (
-                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                ) : (
-                                    <MagnifyingGlassIcon className="w-4 h-4" />
-                                )}
-                                <span>{isFetchingPoints ? 'Buscando...' : 'Buscar Puntos'}</span>
-                            </button>
-                            <button onClick={onClearPoints} disabled={!selectedRace} className="text-sm text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Limpiar</button>
-                        </div>
+                {selectedRace && (
+                    <div className="mt-2">
+                        <label htmlFor="round-date" className="block text-sm font-medium text-gray-300 mb-1">Fecha Límite (Cierre de Mercado)</label>
+                        <input
+                            id="round-date"
+                            type="datetime-local"
+                            value={editedRaceDate}
+                            onChange={(e) => setEditedRaceDate(e.target.value)}
+                            onBlur={handleRaceDateChange}
+                            className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
                     </div>
-                    <select
-                        value={selectedRace?.id ?? ''}
-                        onChange={(e) => {
-                            const race = races.find(r => r.id === Number(e.target.value));
-                            if (race) onSelectRace(race);
-                        }}
-                        className="w-full bg-gray-900 text-white p-2 rounded-md mb-2"
-                        disabled={races.length === 0}
-                    >
-                        <option value="" disabled>{races.length === 0 ? 'No hay carreras en el calendario' : 'Selecciona jornada...'}</option>
-                        {races.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
-                    </select>
+                )}
 
-                    {selectedRace && (
-                        <div className="mt-2">
-                            <label htmlFor="round-date" className="block text-sm font-medium text-gray-300 mb-1">Fecha Límite (Cierre de Mercado)</label>
-                            <input
-                                id="round-date"
-                                type="datetime-local"
-                                value={editedRaceDate}
-                                onChange={(e) => setEditedRaceDate(e.target.value)}
-                                onBlur={handleRaceDateChange}
-                                className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
-                            />
-                        </div>
-                    )}
-
-                    <div className="max-h-[45vh] overflow-y-auto pr-2 mt-4">
-                        <div className="space-y-3">
-                            {riders.map(rider => (
-                                <div key={rider.id} className="bg-gray-900/50 p-2 rounded-md">
-                                    <label htmlFor={`rider-points-${rider.id}`} className="block text-sm font-semibold mb-1 truncate">{rider.name}</label>
-                                     <div className="flex items-center gap-2">
-                                        <label htmlFor={`rider-points-${rider.id}`} className="text-gray-400">Puntos:</label>
-                                        <input
-                                            id={`rider-points-${rider.id}`}
-                                            type="number"
-                                            value={currentRiderPoints[rider.id] ?? ''}
-                                            onChange={(e) => onPointChange(rider.id, e.target.value)}
-                                            className="w-full bg-gray-700 text-white p-1 rounded-md text-right focus:outline-none focus:ring-2 focus:ring-red-500"
-                                            placeholder="0"
-                                            disabled={!selectedRace}
-                                        />
-                                    </div>
+                <div className="max-h-[45vh] overflow-y-auto pr-2 mt-4">
+                    <div className="space-y-3">
+                        {riders.map(rider => (
+                            <div key={rider.id} className="bg-gray-900/50 p-2 rounded-md">
+                                <label htmlFor={`rider-points-${rider.id}`} className="block text-sm font-semibold mb-1 truncate">{rider.name}</label>
+                                 <div className="flex items-center gap-2">
+                                    <label htmlFor={`rider-points-${rider.id}`} className="text-gray-400">Puntos:</label>
+                                    <input
+                                        id={`rider-points-${rider.id}`}
+                                        type="number"
+                                        value={currentRiderPoints[rider.id] ?? ''}
+                                        onChange={(e) => onPointChange(rider.id, e.target.value)}
+                                        className="w-full bg-gray-700 text-white p-1 rounded-md text-right focus:outline-none focus:ring-2 focus:ring-red-500"
+                                        placeholder="0"
+                                        disabled={!selectedRace}
+                                    />
                                 </div>
-                            ))}
-                        </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </div>
@@ -255,7 +257,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             <input id="rider-team" name="team" type="text" value={riderFormData.team} onChange={handleRiderFormChange} className="w-full bg-gray-900 text-white p-2 rounded-md"/>
                         </div>
                          <div>
-                            <label htmlFor="rider-bike" className="block text-sm font-medium text-gray-300 mb-1">Moto</label>
+                            <label htmlFor="rider-bike" className="block text-sm font-medium text-gray-300 mb-1">Motor</label>
                             <input id="rider-bike" name="bike" type="text" value={riderFormData.bike} onChange={handleRiderFormChange} className="w-full bg-gray-900 text-white p-2 rounded-md"/>
                         </div>
                         <div>

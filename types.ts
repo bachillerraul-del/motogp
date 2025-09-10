@@ -1,16 +1,18 @@
+export type Sport = 'motogp' | 'f1';
+
 export interface Rider {
     id: number;
     name: string;
     team: string;
     bike: string;
     price: number;
+    initial_price: number;
     condition?: string; // e.g., 'Rider on fire'
 }
 
 export interface Participant {
     id: number;
     name:string;
-    team_ids: number[];
 }
 
 export interface TeamSnapshot {

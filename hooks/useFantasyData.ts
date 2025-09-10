@@ -1,13 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import type { Participant, Rider, TeamSnapshot, AllRiderPoints, Race } from '../types';
-import { MOTOGP_RIDERS } from '../constants';
+import type { Participant, Rider, TeamSnapshot, AllRiderPoints, Race, Sport } from '../types';
+import { MOTOGP_RIDERS, F1_DRIVERS, F1_RACES } from '../constants';
 
-export const useFantasyData = () => {
+export const useFantasyData = (sport: Sport | null) => {
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [races, setRaces] = useState<Race[]>([]);
     const [teamSnapshots, setTeamSnapshots] = useState<TeamSnapshot[]>([]);
-    const [riders, setRiders] = useState<Rider[]>(MOTOGP_RIDERS);
+    const [riders, setRiders] = useState<Rider[]>([]);
     const [allRiderPoints, setAllRiderPoints] = useState<AllRiderPoints>({});
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
@@ -17,33 +17,40 @@ export const useFantasyData = () => {
     }, []);
 
     const fetchData = useCallback(async () => {
+        if (!sport) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
-        const [participantsRes, snapshotsRes, pointsRes, ridersRes, racesRes] = await Promise.all([
+
+        const tableNames = {
+            rider_points: sport === 'f1' ? 'f1_rider_points' : 'rider_points',
+            rider: sport === 'f1' ? 'f1_rider' : 'rider',
+            races: sport === 'f1' ? 'f1_races' : 'races',
+        };
+
+        const [participantsRes, motogpSnapshotsRes, f1SnapshotsRes, pointsRes, ridersRes, racesRes] = await Promise.all([
             supabase.from('participants').select('*').order('id'),
-            supabase.from('team_snapshots').select('*').order('created_at'),
-            supabase.from('rider_points').select('round_id, rider_id, points'),
-            supabase.from('rider').select('*').order('id'),
-            supabase.from('races').select('*').order('round')
+            supabase.from('team_snapshots').select('*'),
+            supabase.from('f1_team_snapshots').select('*'),
+            supabase.from(tableNames.rider_points).select('round_id, rider_id, points'),
+            supabase.from(tableNames.rider).select('*').order('id'),
+            supabase.from(tableNames.races).select('*').order('round')
         ]);
 
-        if (participantsRes.error) {
-            console.error('Error fetching participants:', participantsRes.error);
-            showToast('No se pudieron cargar los participantes.', 'error');
-        } else {
-            setParticipants(participantsRes.data || []);
-        }
+        if (participantsRes.error) console.error('Error fetching participants:', participantsRes.error);
+        setParticipants(participantsRes.data || []);
         
-        if (snapshotsRes.error) {
-            console.error('Error fetching snapshots:', snapshotsRes.error);
-            showToast('No se pudo cargar el historial de equipos.', 'error');
-        } else {
-            setTeamSnapshots(snapshotsRes.data || []);
-        }
+        if (motogpSnapshotsRes.error) console.error('Error fetching MotoGP snapshots:', motogpSnapshotsRes.error);
+        if (f1SnapshotsRes.error) console.error('Error fetching F1 snapshots:', f1SnapshotsRes.error);
+        const allSnapshots = [
+            ...(motogpSnapshotsRes.data || []),
+            ...(f1SnapshotsRes.data || [])
+        ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        setTeamSnapshots(allSnapshots);
 
-        if (pointsRes.error) {
-            console.error('Error fetching rider points:', pointsRes.error);
-            showToast('No se pudieron cargar los puntos de los pilotos.', 'error');
-        } else if (pointsRes.data) {
+        if (pointsRes.error) console.error('Error fetching rider points:', pointsRes.error);
+        if (pointsRes.data) {
             const pointsMap = pointsRes.data.reduce((acc, item) => {
                 if (!acc[item.round_id]) acc[item.round_id] = {};
                 acc[item.round_id][item.rider_id] = item.points || 0;
@@ -52,49 +59,42 @@ export const useFantasyData = () => {
             setAllRiderPoints(pointsMap);
         }
         
+        const initialRiders = sport === 'f1' ? F1_DRIVERS : MOTOGP_RIDERS;
         if (ridersRes.error) {
             console.error('Error fetching riders, using fallback:', ridersRes.error);
-            showToast('Error al cargar los datos de los pilotos. Usando datos locales.', 'error');
-            setRiders(MOTOGP_RIDERS); // Fallback to constants
+            setRiders(initialRiders);
         } else if (ridersRes.data.length === 0) {
-            // Table is empty, let's seed it with the initial rider data
-            console.log('Seeding rider table with initial data...');
-            showToast('Inicializando datos de pilotos en la base de datos...', 'success');
-
-            const ridersToSeed = MOTOGP_RIDERS.map(rider => ({
-                id: rider.id,
-                name: rider.name,
-                team: rider.team,
-                bike: rider.bike,
-                price: rider.price,
-                condition: rider.condition ?? null,
-            }));
-
-            const { error: seedError } = await supabase.from('rider').upsert(ridersToSeed);
-
+            console.log(`Seeding ${tableNames.rider} table...`);
+            const ridersToSeed = initialRiders.map(r => ({ ...r, condition: r.condition ?? null }));
+            const { error: seedError } = await supabase.from(tableNames.rider).upsert(ridersToSeed);
             if (seedError) {
-                console.error('Error seeding riders table:', seedError);
-                showToast('Error al inicializar los datos de los pilotos.', 'error');
-                setRiders(MOTOGP_RIDERS); // Fallback to local data on seed error
+                console.error(`Error seeding ${tableNames.rider}:`, seedError);
+                setRiders(initialRiders);
             } else {
-                showToast('Datos de pilotos inicializados correctamente.', 'success');
-                setRiders(MOTOGP_RIDERS); // Use the data we just seeded
+                setRiders(initialRiders);
             }
         } else {
-            // We have data from the database, use it
             setRiders(ridersRes.data);
         }
 
         if (racesRes.error) {
             console.error('Error fetching races:', racesRes.error);
-            showToast('No se pudo cargar el calendario de carreras.', 'error');
+        } else if (racesRes.data.length === 0 && sport === 'f1') {
+             console.log(`Seeding ${tableNames.races} table...`);
+             const { error: seedError } = await supabase.from(tableNames.races).insert(F1_RACES);
+             if (seedError) {
+                 console.error(`Error seeding ${tableNames.races}:`, seedError);
+                 setRaces([]);
+             } else {
+                 const { data: newRaces } = await supabase.from(tableNames.races).select('*').order('round');
+                 setRaces(newRaces || []);
+             }
         } else {
             setRaces(racesRes.data || []);
         }
 
-
         setLoading(false);
-    }, [showToast]);
+    }, [sport]);
 
 
     useEffect(() => {
@@ -102,11 +102,14 @@ export const useFantasyData = () => {
     }, [fetchData]);
     
     const addParticipantToLeague = useCallback(async (name: string, team: Rider[], raceId: number): Promise<Participant | null> => {
+        if (!sport) return null;
+        const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
+        
         const team_ids = team.map(r => r.id);
 
         const { data: newParticipant, error: participantError } = await supabase
             .from('participants')
-            .insert({ name, team_ids })
+            .insert({ name })
             .select()
             .single();
 
@@ -117,54 +120,43 @@ export const useFantasyData = () => {
         }
 
         const { error: snapshotError } = await supabase
-            .from('team_snapshots')
+            .from(snapshotTable)
             .insert({ participant_id: newParticipant.id, team_ids, race_id: raceId });
         
         if (snapshotError) {
              console.error('Error creating snapshot:', snapshotError);
              showToast('Error al guardar el historial del equipo.', 'error');
-             // Attempt to roll back participant creation for consistency
              await supabase.from('participants').delete().eq('id', newParticipant.id);
              return null;
         }
         
-        await fetchData(); // Refetch all data to ensure consistency
+        await fetchData();
         showToast(`'${name}' ha sido añadido a la liga.`, 'success');
         return newParticipant;
-    }, [showToast, fetchData]);
+    }, [sport, showToast, fetchData]);
 
     const handleUpdateParticipantTeam = useCallback(async (participantId: number, team: Rider[], raceId: number): Promise<boolean> => {
+        if (!sport) return false;
+        const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
         const team_ids = team.map(r => r.id);
-
-        // Update the participant's main team_ids to reflect the latest submission
-        const { error: updateError } = await supabase
-            .from('participants')
-            .update({ team_ids })
-            .eq('id', participantId);
-
-        if (updateError) {
-            console.error('Error updating participant team:', updateError);
-            showToast('Error al actualizar el equipo del participante.', 'error');
-            return false;
-        }
         
-        // Insert a new snapshot for the specific race
         const { error: snapshotError } = await supabase
-            .from('team_snapshots')
+            .from(snapshotTable)
             .insert({ participant_id: participantId, team_ids, race_id: raceId });
             
         if (snapshotError) {
             console.error('Error creating new team snapshot:', snapshotError);
             showToast('Error al guardar el equipo para esta jornada.', 'error');
-            // Data might be slightly inconsistent, but core functionality remains.
+            return false;
         }
         
         await fetchData();
         showToast('Equipo actualizado con éxito para esta jornada.', 'success');
         return true;
-    }, [showToast, fetchData]);
+    }, [sport, showToast, fetchData]);
 
     const handleUpdateParticipant = useCallback(async (participant: Participant) => {
+        if (!sport) return;
         const { id, ...updateData } = participant;
         const { error } = await supabase
             .from('participants')
@@ -177,9 +169,18 @@ export const useFantasyData = () => {
         } else {
             setParticipants(prev => prev.map(p => p.id === id ? participant : p));
         }
-    }, [showToast]);
+    }, [sport, showToast]);
     
     const handleDeleteParticipant = useCallback(async (participantId: number) => {
+        if (!sport) return;
+
+        // Delete snapshots from both leagues first
+        const { error: tsError } = await supabase.from('team_snapshots').delete().eq('participant_id', participantId);
+        const { error: f1TsError } = await supabase.from('f1_team_snapshots').delete().eq('participant_id', participantId);
+        
+        if (tsError) console.error("Error deleting motogp snapshots:", tsError);
+        if (f1TsError) console.error("Error deleting f1 snapshots:", f1TsError);
+
         const { error } = await supabase
             .from('participants')
             .delete()
@@ -192,11 +193,13 @@ export const useFantasyData = () => {
             await fetchData();
             showToast('Participante eliminado.', 'success');
         }
-    }, [showToast, fetchData]);
+    }, [sport, showToast, fetchData]);
     
     const handleUpdateRace = useCallback(async (race: Race) => {
+        if (!sport) return;
+        const raceTable = sport === 'f1' ? 'f1_races' : 'races';
         const { error } = await supabase
-            .from('races')
+            .from(raceTable)
             .update({ gp_name: race.gp_name, race_date: race.race_date })
             .eq('id', race.id);
 
@@ -206,25 +209,26 @@ export const useFantasyData = () => {
             setRaces(prev => prev.map(r => r.id === race.id ? race : r));
             showToast('Jornada actualizada.', 'success');
         }
-    }, [showToast]);
+    }, [sport, showToast]);
 
     const handleUpdateRider = useCallback(async (updatedRider: Rider): Promise<void> => {
+        if (!sport) throw new Error("Sport not selected");
+        const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
         const { id, ...updateData } = updatedRider;
 
-        // Ensure condition is handled correctly (null vs undefined)
         if (updateData.condition === undefined) {
             updateData.condition = null;
         }
 
         const { error } = await supabase
-            .from('rider')
+            .from(riderTable)
             .update(updateData)
             .eq('id', id);
         
         if (error) {
             console.error("Error updating rider:", error);
             showToast(`Error al actualizar a ${updatedRider.name}.`, 'error');
-            throw error; // Re-throw to allow caller to handle it
+            throw error;
         }
 
         setRiders(prevRiders =>
@@ -233,7 +237,7 @@ export const useFantasyData = () => {
             )
         );
         showToast(`Piloto ${updatedRider.name} actualizado.`, 'success');
-    }, [showToast]);
+    }, [sport, showToast]);
 
     return {
         participants,

@@ -9,12 +9,17 @@ interface RiderCardProps {
     isAffordable: boolean;
     selectedByTeams: string[];
     priceChange: number;
+    currencyPrefix: string;
+    currencySuffix: string;
 }
 
-const formatPrice = (price: number): string => `€${price.toLocaleString('es-ES')}`;
-
-export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable, selectedByTeams, priceChange }) => {
+export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable, selectedByTeams, priceChange, currencyPrefix, currencySuffix }) => {
     const isSelectable = !rider.condition?.includes('unavailable') && !rider.condition?.includes('injured');
+
+    const formatPrice = (price: number): string => {
+        const value = currencySuffix === 'M' ? (price / 10).toFixed(1) : price.toLocaleString('es-ES');
+        return `${currencyPrefix}${value}${currencySuffix}`;
+    }
 
     const getButtonText = () => {
         if (!isSelectable) return 'No Disponible';
@@ -54,7 +59,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
                          {priceChange !== 0 && (
                             <span className={`text-xs font-bold flex items-center justify-end gap-1 ${priceChange > 0 ? 'text-green-400' : 'text-red-500'}`}>
                                 {priceChange > 0 ? <ArrowUpIcon className="w-3 h-3" /> : <ArrowDownIcon className="w-3 h-3" />}
-                                <span>€{Math.abs(priceChange)}</span>
+                                <span>{formatPrice(Math.abs(priceChange))}</span>
                             </span>
                         )}
                     </div>

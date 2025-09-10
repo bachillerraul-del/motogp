@@ -1,4 +1,4 @@
-import type { TeamSnapshot } from '../types';
+import type { TeamSnapshot, Race } from '../types';
 
 export const getTeamForRace = (participantId: number, raceId: number, snapshots: TeamSnapshot[]): number[] => {
     const raceSnapshots = snapshots
@@ -11,4 +11,18 @@ export const getTeamForRace = (participantId: number, raceId: number, snapshots:
     }
 
     return [];
+};
+
+export const getLatestTeam = (
+    participantId: number,
+    sportRaces: Race[],
+    allSnapshots: TeamSnapshot[]
+): number[] => {
+    const sportRaceIds = new Set(sportRaces.map(r => r.id));
+    
+    const participantSportSnapshots = allSnapshots
+        .filter(s => s.participant_id === participantId && s.race_id && sportRaceIds.has(s.race_id))
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return participantSportSnapshots.length > 0 ? participantSportSnapshots[0].team_ids : [];
 };

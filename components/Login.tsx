@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import type { Participant } from '../types';
-import { MotoIcon, UserPlusIcon } from './Icons';
+import type { Participant, Sport } from '../types';
+import { MotoIcon, UserPlusIcon, F1Icon } from './Icons';
 
 interface LoginProps {
     participants: Participant[];
     onLogin: (participant: Participant) => void;
     onGoToBuilderForNew: (name: string) => void;
+    sport: Sport;
 }
 
 const ParticipantCard: React.FC<{ participant: Participant; onSelect: () => void }> = ({ participant, onSelect }) => (
@@ -21,7 +22,7 @@ const ParticipantCard: React.FC<{ participant: Participant; onSelect: () => void
     </div>
 );
 
-export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuilderForNew }) => {
+export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuilderForNew, sport }) => {
     const [isCreating, setIsCreating] = useState(false);
     const [newName, setNewName] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -45,14 +46,16 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
         onGoToBuilderForNew(trimmedName);
     };
 
+    const SportIcon = sport === 'f1' ? F1Icon : MotoIcon;
+    const sportName = sport === 'f1' ? 'F1' : 'MotoGP';
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 animate-fadeIn">
             <header className="text-center mb-10">
                 <div className="flex justify-center items-center gap-4 mb-4">
-                    <MotoIcon className="w-12 h-12 text-red-600"/>
+                    <SportIcon className="w-12 h-12 text-red-600"/>
                     <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white uppercase">
-                        <span className="text-red-600">MotoGP</span> Fantasy
+                        <span className="text-red-600">{sportName}</span> Fantasy
                     </h1>
                 </div>
                 <p className="text-2xl text-gray-300">Selecciona tu perfil para empezar</p>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import type { Rider, Participant, Race, TeamSnapshot, AllRiderPoints } from '../types';
+import type { Rider, Participant, Race, TeamSnapshot, AllRiderPoints, Sport } from '../types';
 import { supabase } from '../lib/supabaseClient';
 import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
@@ -79,13 +79,18 @@ interface ResultsProps {
     showToast: (message: string, type: 'success' | 'error') => void;
     allRiderPoints: AllRiderPoints;
     refetchData: () => void;
+    sport: Sport;
+    BUDGET: number;
+    TEAM_SIZE: number;
+    currencyPrefix: string;
+    currencySuffix: string;
 }
 
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
         participants, races, teamSnapshots, riders, isAdmin, 
         onUpdateParticipant, onDeleteParticipant, onUpdateRace, onUpdateRider,
-        showToast, allRiderPoints, refetchData
+        showToast, allRiderPoints, refetchData, sport, BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix
     } = props;
     
     const [selectedRaceForEditing, setSelectedRaceForEditing] = useState<Race | null>(null);
@@ -103,14 +108,21 @@ export const Results: React.FC<ResultsProps> = (props) => {
 
     useEffect(() => {
         if (races.length > 0 && !defaultViewIsSet.current) {
-            const latestRace = [...races].sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
-            setLeaderboardView(latestRace.id);
-            if (!selectedRaceForEditing) {
-                setSelectedRaceForEditing(latestRace);
+            const latestRaceWithPoints = [...races]
+                .filter(r => allRiderPoints[r.id] && Object.keys(allRiderPoints[r.id]).length > 0)
+                .sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
+            
+            const latestRace = latestRaceWithPoints || [...races].sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
+            
+            if (latestRace) {
+                setLeaderboardView(latestRace.id);
+                if (!selectedRaceForEditing) {
+                    setSelectedRaceForEditing(latestRace);
+                }
             }
             defaultViewIsSet.current = true;
         }
-    }, [races, selectedRaceForEditing]);
+    }, [races, allRiderPoints, selectedRaceForEditing]);
 
     const handlePointChange = async (riderId: number, pointsStr: string) => {
         if (selectedRaceForEditing === null) {
@@ -120,7 +132,8 @@ export const Results: React.FC<ResultsProps> = (props) => {
         const finalPoints = pointsStr === '' ? 0 : parseInt(pointsStr, 10);
         if (isNaN(finalPoints)) return;
 
-        const { error } = await supabase.from('rider_points').upsert({
+        const pointTable = sport === 'f1' ? 'f1_rider_points' : 'rider_points';
+        const { error } = await supabase.from(pointTable).upsert({
             round_id: selectedRaceForEditing.id,
             rider_id: riderId,
             points: finalPoints
@@ -136,7 +149,8 @@ export const Results: React.FC<ResultsProps> = (props) => {
     
     const confirmClearPoints = async () => {
         if (selectedRaceForEditing === null) return;
-        const { error } = await supabase.from('rider_points').delete().eq('round_id', selectedRaceForEditing.id);
+        const pointTable = sport === 'f1' ? 'f1_rider_points' : 'rider_points';
+        const { error } = await supabase.from(pointTable).delete().eq('round_id', selectedRaceForEditing.id);
         if (error) {
             console.error('Error clearing points:', error);
             showToast('Error al limpiar los puntos.', 'error');
@@ -235,7 +249,6 @@ export const Results: React.FC<ResultsProps> = (props) => {
             <div className="flex flex-col lg:flex-row gap-8">
                 {isAdmin && (
                     <div id="admin-panel" className={`${isAdminPanelOpen ? 'block' : 'hidden'} lg:block w-full lg:w-1/3 transition-all duration-300`}>
-                        {/* FIX: Pass correct props to AdminPanel to satisfy its interface and fix TypeScript error. */}
                         <AdminPanel
                             races={races}
                             selectedRace={selectedRaceForEditing}
@@ -247,6 +260,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                             onPointChange={handlePointChange}
                             onUpdateRider={onUpdateRider}
                             showToast={showToast}
+                            sport={sport}
                         />
                     </div>
                 )}
@@ -284,6 +298,11 @@ export const Results: React.FC<ResultsProps> = (props) => {
                                 allRiderPoints={allRiderPoints}
                                 teamSnapshots={teamSnapshots}
                                 riders={riders}
+                                sport={sport}
+                                BUDGET={BUDGET}
+                                TEAM_SIZE={TEAM_SIZE}
+                                currencyPrefix={currencyPrefix}
+                                currencySuffix={currencySuffix}
                             />
                         </div>
 

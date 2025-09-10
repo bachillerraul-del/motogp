@@ -1,5 +1,5 @@
 {
-  "name": "motogp-fantasy-team-builder",
+  "name": "motogp-&-f1-fantasy-league",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,7 +12,8 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "@google/genai": "^1.16.0",
-    "@supabase/supabase-js": "2.44.4"
+    "@supabase/supabase-js": "2.44.4",
+    "html-to-image": "1.11.11"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

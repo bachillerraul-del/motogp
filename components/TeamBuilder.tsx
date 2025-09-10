@@ -1,12 +1,13 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Rider, Participant, Race, TeamSnapshot } from '../types';
-import { TEAM_SIZE, BUDGET, MOTOGP_RIDERS } from '../constants';
+import React, { useState, useMemo, useCallback } from 'react';
+import type { Rider, Race, Participant, TeamSnapshot, Sport } from '../types';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
-import { CloseIcon } from './Icons';
-import { Countdown } from './Countdown';
+import { getLatestTeam } from '../lib/utils';
+import { LightBulbIcon, SparklesIcon, ArrowPathIcon } from './Icons';
+import { getAITeamAdvice } from '../services/geminiService';
 
 interface TeamBuilderProps {
+    races: Race[];
     riders: Rider[];
     participants: Participant[];
     teamSnapshots: TeamSnapshot[];
@@ -16,299 +17,227 @@ interface TeamBuilderProps {
     currentRace: Race | null;
     currentUser: Participant | null;
     newUserName: string | null;
+    BUDGET: number;
+    TEAM_SIZE: number;
+    currencyPrefix: string;
+    currencySuffix: string;
+    sport: Sport;
 }
 
-const useTeamManagement = (showToast: TeamBuilderProps['showToast']) => {
-    const [team, setTeam] = useState<Rider[]>([]);
+export const TeamBuilder: React.FC<TeamBuilderProps> = ({
+    races, riders, participants, teamSnapshots, onAddToLeague, onUpdateTeam,
+    showToast, currentRace, currentUser, newUserName,
+    BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix, sport
+}) => {
+    const getInitialTeam = () => {
+        if (!currentUser) return [];
+        const latestTeamIds = getLatestTeam(currentUser.id, races, teamSnapshots);
+        return riders.filter(r => latestTeamIds.includes(r.id));
+    };
 
-    const teamTotalPrice = useMemo(() => team.reduce((sum, rider) => sum + rider.price, 0), [team]);
-    const remainingBudget = useMemo(() => BUDGET - teamTotalPrice, [teamTotalPrice]);
-    const isTeamFull = useMemo(() => team.length >= TEAM_SIZE, [team]);
+    const [team, setTeam] = useState<Rider[]>(getInitialTeam);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [sortBy, setSortBy] = useState<'price' | 'name'>('price');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isFetchingAdvice, setIsFetchingAdvice] = useState(false);
+    const [aiAdvice, setAiAdvice] = useState<string | null>(null);
 
-    const addRider = useCallback((rider: Rider) => {
-        if (rider.condition?.includes('unavailable') || rider.condition?.includes('injured')) {
-            showToast('Este piloto no está disponible para selección.', 'error');
-            return;
-        }
-        if (isTeamFull) {
+    const remainingBudget = useMemo(() => {
+        const teamCost = team.reduce((total, rider) => total + rider.price, 0);
+        return BUDGET - teamCost;
+    }, [team, BUDGET]);
+
+    const teamRiderIds = useMemo(() => new Set(team.map(r => r.id)), [team]);
+
+    const filteredAndSortedRiders = useMemo(() => {
+        return [...riders]
+            .filter(rider => rider.name.toLowerCase().includes(searchTerm.toLowerCase()) && !teamRiderIds.has(rider.id))
+            .sort((a, b) => {
+                if (sortBy === 'price') return b.price - a.price;
+                return a.name.localeCompare(b.name);
+            });
+    }, [riders, searchTerm, teamRiderIds, sortBy]);
+    
+    const teamSelectionCounts = useMemo(() => {
+        const counts = new Map<number, number>();
+        const latestTeams = new Map<number, number[]>();
+        
+        participants.forEach(p => {
+             latestTeams.set(p.id, getLatestTeam(p.id, races, teamSnapshots));
+        });
+
+        latestTeams.forEach(teamIds => {
+            teamIds.forEach(riderId => {
+                counts.set(riderId, (counts.get(riderId) || 0) + 1);
+            });
+        });
+        return counts;
+    }, [participants, teamSnapshots, races]);
+    
+    const getSelectedByTeams = (riderId: number): string[] => {
+        const participantNames: string[] = [];
+        participants.forEach(p => {
+            const latestTeam = getLatestTeam(p.id, races, teamSnapshots);
+            if (latestTeam.includes(riderId)) {
+                participantNames.push(p.name);
+            }
+        });
+        return participantNames;
+    };
+
+
+    const handleAddRider = (rider: Rider) => {
+        if (team.length >= TEAM_SIZE) {
             showToast('Tu equipo ya está lleno.', 'error');
             return;
         }
-        if (team.some(r => r.id === rider.id)) {
-            showToast('Este piloto ya está en tu equipo.', 'error');
+        if (teamRiderIds.has(rider.id)) {
+            showToast(`${rider.name} ya está en tu equipo.`, 'error');
             return;
         }
-        if (remainingBudget < 0 || rider.price > remainingBudget) {
-            showToast('No tienes presupuesto suficiente para este piloto.', 'error');
-            return;
-        }
-        setTeam(prevTeam => [...prevTeam, rider]);
-        showToast(`${rider.name} añadido al equipo.`, 'success');
-    }, [team, remainingBudget, isTeamFull, showToast]);
+        setTeam([...team, rider]);
+    };
 
-    const removeRider = useCallback((rider: Rider) => {
-        setTeam(prevTeam => prevTeam.filter(r => r.id !== rider.id));
-        showToast(`${rider.name} quitado del equipo.`, 'success');
-    }, [showToast]);
+    const handleRemoveRider = (riderId: number) => {
+        setTeam(team.filter(rider => rider.id !== riderId));
+    };
 
-    const clearTeam = useCallback(() => {
-        setTeam([]);
-    }, []);
+    const isTeamValid = team.length === TEAM_SIZE && remainingBudget >= 0;
 
-    return { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull };
-};
-
-const shareTeamOnWhatsapp = (team: Rider[]) => {
-    const riderList = team.map((r, index) => `${index + 1}. ${r.name} (€${r.price.toLocaleString('es-ES')})`).join('\n');
-    const teamPrice = team.reduce((sum, rider) => sum + rider.price, 0).toLocaleString('es-ES');
-    const message = `🏁 ¡Mi equipo de MotoGP Fantasy! 🏁\n\n*Coste Total: €${teamPrice}*\n\n*Pilotos:*\n${riderList}\n\nCrea tu propio equipo aquí.`;
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-};
-
-const calculateTimeRemaining = (deadline: Date) => {
-    const total = deadline.getTime() - new Date().getTime();
-    const seconds = Math.floor((total / 1000) % 60);
-    const minutes = Math.floor((total / 1000 / 60) % 60);
-    const hours = Math.floor((total / (1000 * 60 * 60)) % 24);
-    const days = Math.floor(total / (1000 * 60 * 60 * 24));
-    return { days, hours, minutes, seconds };
-};
-
-export const TeamBuilder: React.FC<TeamBuilderProps> = ({ riders, participants, teamSnapshots, onAddToLeague, onUpdateTeam, showToast, currentRace, currentUser, newUserName }) => {
-    const { team, addRider, removeRider, clearTeam, teamTotalPrice, remainingBudget, isTeamFull } = useTeamManagement(showToast);
-    
-    const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-
-    const deadlineDate = useMemo(() => currentRace?.race_date ? new Date(currentRace.race_date) : null, [currentRace]);
-    const [marketStatus, setMarketStatus] = useState({ 
-        isOpen: true, 
-        timeRemaining: { days: 0, hours: 0, minutes: 0, seconds: 0 } 
-    });
-
-    const initialPrices = useMemo(() => {
-        const priceMap = new Map<number, number>();
-        MOTOGP_RIDERS.forEach(rider => {
-            priceMap.set(rider.id, rider.price);
-        });
-        return priceMap;
-    }, []);
-
-    useEffect(() => {
-        if (!deadlineDate) {
-            setMarketStatus(prev => ({ ...prev, isOpen: true }));
-            return;
-        }
-
-        const updateStatus = () => {
-            const now = new Date();
-            if (now >= deadlineDate) {
-                setMarketStatus({ isOpen: false, timeRemaining: { days: 0, hours: 0, minutes: 0, seconds: 0 } });
-                return true; // Timer finished
-            }
-            setMarketStatus({ isOpen: true, timeRemaining: calculateTimeRemaining(deadlineDate) });
-            return false; // Timer still running
-        };
-
-        if (updateStatus()) return; // If market already closed, no need for interval
-
-        const timer = setInterval(() => {
-            if (updateStatus()) {
-                clearInterval(timer);
-            }
-        }, 1000);
-
-        return () => clearInterval(timer);
-    }, [deadlineDate]);
-
-    const ridersInLeagues = useMemo(() => {
-        const riderSelectionMap: Record<number, string[]> = {};
-        for (const participant of participants) {
-            for (const riderId of participant.team_ids) {
-                if (!riderSelectionMap[riderId]) {
-                    riderSelectionMap[riderId] = [];
-                }
-                riderSelectionMap[riderId].push(participant.name);
-            }
-        }
-        return riderSelectionMap;
-    }, [participants]);
-
-    const availableRiders = useMemo(() => {
-        const teamIds = new Set(team.map(r => r.id));
-        const filteredRiders = riders.filter(r => !teamIds.has(r.id));
-
-        const available = [];
-        const unavailable = [];
-
-        for (const rider of filteredRiders) {
-            if (rider.condition?.includes('unavailable') || rider.condition?.includes('injured')) {
-                unavailable.push(rider);
-            } else {
-                available.push(rider);
-            }
-        }
-        
-        available.sort((a, b) => b.price - a.price);
-
-        return [...available, ...unavailable];
-    }, [team, riders]);
-
-    const handleSaveAndShareClick = () => {
-        if (!marketStatus.isOpen) {
-            showToast('El mercado está cerrado. No se pueden hacer cambios.', 'error');
-            return;
-        }
-        if (team.length !== TEAM_SIZE) {
-            showToast(`Debes seleccionar ${TEAM_SIZE} pilotos.`, 'error');
+    const handleSubmit = async () => {
+        if (!isTeamValid) {
+            showToast('Tu equipo no es válido. Revisa el tamaño y el presupuesto.', 'error');
             return;
         }
         if (!currentRace) {
-            showToast('No hay una carrera activa para registrar el equipo.', 'error');
+            showToast('No hay una jornada activa para guardar el equipo.', 'error');
             return;
         }
-
-        if (currentUser) {
-            const updateAndShare = async () => {
-                const success = await onUpdateTeam(currentUser.id, team, currentRace.id);
-                if (success) {
-                    shareTeamOnWhatsapp(team);
-                    clearTeam();
-                }
-            };
-            updateAndShare();
-        } else if (newUserName) {
-            // New user flow
-            const createAndShare = async () => {
-                const success = await onAddToLeague(newUserName, team, currentRace.id);
-                if (success) {
-                    shareTeamOnWhatsapp(team);
-                    clearTeam();
-                }
-            };
-            createAndShare();
-        } else {
-            console.error("Attempted to save a team without a currentUser or newUserName.");
-            showToast('Error inesperado. No se pudo identificar al usuario.', 'error');
+        
+        setIsSubmitting(true);
+        let success = false;
+        
+        if (currentUser) { // Existing user updating team
+            success = await onUpdateTeam(currentUser.id, team, currentRace.id);
+        } else if (newUserName) { // New user creating team
+            success = await onAddToLeague(newUserName, team, currentRace.id);
         }
+
+        setIsSubmitting(false);
     };
     
-    const builderTitle = useMemo(() => {
-        if (currentUser) {
-            return `Editando equipo de ${currentUser.name}`;
+     const handleFetchAdvice = useCallback(async () => {
+        setIsFetchingAdvice(true);
+        setAiAdvice(null);
+        try {
+            const availableRiders = riders.filter(r => !teamRiderIds.has(r.id));
+            const advice = await getAITeamAdvice(team, remainingBudget, availableRiders, sport);
+            setAiAdvice(advice);
+        } catch (error) {
+            console.error(error);
+            showToast('Error al obtener la recomendación de la IA.', 'error');
+        } finally {
+            setIsFetchingAdvice(false);
         }
-        if (newUserName) {
-            return `Creando equipo para ${newUserName}`;
-        }
-        return 'Elige tus Pilotos';
-    }, [currentUser, newUserName]);
+    }, [team, remainingBudget, riders, teamRiderIds, sport, showToast]);
+
+
+    if (!currentRace) {
+        return (
+            <div className="text-center py-20 bg-gray-800 rounded-lg">
+                <h2 className="text-2xl font-bold text-white">Mercado Cerrado</h2>
+                <p className="text-gray-400 mt-2">No es posible crear o modificar equipos en este momento.</p>
+            </div>
+        );
+    }
+    
+    const teamName = currentUser?.name || newUserName || 'Nuevo Participante';
+    const submitButtonText = currentUser ? 'Actualizar Equipo' : 'Unirse a la Liga';
 
     return (
         <div className="flex flex-col lg:flex-row gap-8">
-            <div className="flex-grow pb-24 lg:pb-0">
-                {deadlineDate && (
-                    <div className="bg-gray-800 p-4 rounded-lg mb-6 text-center shadow-lg">
-                        {marketStatus.isOpen ? (
-                            <>
-                                <h3 className="text-lg font-semibold text-red-500 mb-2 uppercase tracking-wider">Cierre de Mercado</h3>
-                                <Countdown timeRemaining={marketStatus.timeRemaining} />
-                                <p className="text-sm text-gray-400 mt-3">
-                                    Fecha límite: {deadlineDate.toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' })}
-                                </p>
-                            </>
-                        ) : (
-                            <div className="py-4">
-                                <h3 className="text-2xl font-bold text-red-600 uppercase tracking-widest">Mercado Cerrado</h3>
+            <div className="w-full lg:w-1/3 xl:w-1/4">
+                <TeamSidebar
+                    team={team}
+                    onRemove={handleRemoveRider}
+                    budget={BUDGET}
+                    remainingBudget={remainingBudget}
+                    teamSize={TEAM_SIZE}
+                    currentUser={currentUser}
+                    newUserName={newUserName}
+                    currencyPrefix={currencyPrefix}
+                    currencySuffix={currencySuffix}
+                />
+                 <button
+                    onClick={handleSubmit}
+                    disabled={!isTeamValid || isSubmitting}
+                    className="mt-4 w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors duration-300 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                >
+                    {isSubmitting ? 'Guardando...' : submitButtonText}
+                </button>
+            </div>
+
+            <div className="flex-grow min-w-0">
+                <div className="bg-gray-800 p-4 rounded-lg shadow-lg mb-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                        <input
+                            type="text"
+                            placeholder="Buscar piloto..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full sm:w-auto flex-grow bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                        <div className="flex items-center gap-2">
+                             <span className="text-sm text-gray-400">Ordenar por:</span>
+                             <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value as 'price' | 'name')}
+                                className="bg-gray-900 text-white p-2 rounded-md"
+                            >
+                                <option value="price">Precio</option>
+                                <option value="name">Nombre</option>
+                            </select>
+                        </div>
+                    </div>
+                     <div className="mt-4 border-t border-gray-700 pt-4">
+                        <button 
+                            onClick={handleFetchAdvice} 
+                            disabled={isFetchingAdvice}
+                            className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 disabled:opacity-50"
+                        >
+                            {isFetchingAdvice ? (
+                                <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <LightBulbIcon className="w-5 h-5" />
+                            )}
+                            <span>{isFetchingAdvice ? 'Analizando equipo...' : 'Pedir consejo a la IA'}</span>
+                        </button>
+                         {aiAdvice && (
+                            <div className="mt-4 p-4 bg-gray-900/50 rounded-lg text-gray-300 border border-blue-500/30">
+                               <div className="flex items-center gap-2 mb-2 text-blue-400">
+                                   <SparklesIcon className="w-5 h-5" />
+                                   <h4 className="font-bold">Análisis de la IA</h4>
+                               </div>
+                               <div className="prose prose-sm prose-invert" dangerouslySetInnerHTML={{ __html: aiAdvice.replace(/\n/g, '<br />') }} />
                             </div>
                         )}
                     </div>
-                )}
-                <div className="mb-6 border-b-2 border-red-600 pb-2 flex justify-between items-end flex-wrap">
-                    <h2 className="text-3xl font-bold">{builderTitle}</h2>
-                    {currentRace && (
-                        <p className="text-md text-gray-300 whitespace-nowrap ml-4 mt-2 sm:mt-0">
-                            Próximo GP: <span className="font-bold text-red-500">{currentRace.gp_name}</span>
-                        </p>
-                    )}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {availableRiders.map(rider => {
-                        const initialPrice = initialPrices.get(rider.id) ?? rider.price;
-                        const priceChange = rider.price - initialPrice;
-                        return (
-                            <RiderCard 
-                                key={rider.id} 
-                                rider={rider} 
-                                onAdd={() => marketStatus.isOpen ? addRider(rider) : showToast('El mercado está cerrado.', 'error')} 
-                                isTeamFull={isTeamFull}
-                                isAffordable={rider.price <= (remainingBudget < 0 ? 0 : remainingBudget)}
-                                selectedByTeams={ridersInLeagues[rider.id] || []}
-                                priceChange={priceChange}
-                            />
-                        );
-                    })}
-                </div>
-            </div>
-
-            <aside className="w-full lg:w-1/3 xl:w-1/4 hidden lg:block">
-                <div className="sticky top-24">
-                   <TeamSidebar 
-                        team={team}
-                        teamTotalPrice={teamTotalPrice}
-                        remainingBudget={remainingBudget}
-                        onRemoveRider={(rider) => marketStatus.isOpen ? removeRider(rider) : showToast('El mercado está cerrado.', 'error')}
-                        onSaveAndShare={handleSaveAndShareClick}
-                   />
-                </div>
-            </aside>
-
-            <div className="lg:hidden">
-                <div 
-                    className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t-2 border-red-600 p-3 shadow-lg z-20 flex justify-between items-center cursor-pointer"
-                    onClick={() => setIsMobileSidebarOpen(true)}
-                    role="button"
-                >
-                    <div>
-                        <p className="font-bold text-lg">{team.length}/{TEAM_SIZE} Pilotos</p>
-                        <p className="text-sm text-gray-400">Restante: 
-                            <span className={`font-mono font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>
-                                €{remainingBudget.toLocaleString('es-ES')}
-                            </span>
-                        </p>
-                    </div>
-                     <span className="text-white font-bold py-2 px-4 rounded-lg bg-red-600/50">Ver Equipo</span>
-                </div>
-
-                <div 
-                    className={`fixed inset-0 bg-black bg-opacity-50 z-30 transition-opacity duration-300 ${isMobileSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-                    onClick={() => setIsMobileSidebarOpen(false)}
-                    aria-hidden={!isMobileSidebarOpen}
-                />
-                <div 
-                    className={`fixed top-0 right-0 bottom-0 w-full max-w-sm bg-gray-900 shadow-xl z-40 transform transition-transform duration-300 ease-in-out ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}
-                    role="dialog"
-                    aria-modal="true"
-                >
-                    <div className="p-4 h-full flex flex-col">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold text-white">Tu Selección</h2>
-                            <button onClick={() => setIsMobileSidebarOpen(false)} className="p-2 text-gray-400 hover:text-white" aria-label="Cerrar">
-                                <CloseIcon className="w-6 h-6" />
-                            </button>
-                        </div>
-                        <div className="overflow-y-auto flex-grow">
-                             <TeamSidebar 
-                                team={team}
-                                teamTotalPrice={teamTotalPrice}
-                                remainingBudget={remainingBudget}
-                                onRemoveRider={(rider) => marketStatus.isOpen ? removeRider(rider) : showToast('El mercado está cerrado.', 'error')}
-                                onSaveAndShare={() => {
-                                    handleSaveAndShareClick();
-                                    setIsMobileSidebarOpen(false);
-                                }}
-                            />
-                        </div>
-                    </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {filteredAndSortedRiders.map(rider => (
+                        <RiderCard
+                            key={rider.id}
+                            rider={rider}
+                            onAdd={handleAddRider}
+                            isTeamFull={team.length >= TEAM_SIZE}
+                            isAffordable={remainingBudget >= rider.price}
+                            selectedByTeams={getSelectedByTeams(rider.id)}
+                            priceChange={rider.price - (rider.initial_price ?? rider.price)}
+                            currencyPrefix={currencyPrefix}
+                            currencySuffix={currencySuffix}
+                        />
+                    ))}
                 </div>
             </div>
         </div>

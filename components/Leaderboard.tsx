@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
-import type { Rider, Participant, Race, TeamSnapshot } from '../types';
-import { TEAM_SIZE } from '../constants';
-import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon } from './Icons';
-import { getTeamForRace } from '../lib/utils';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
+import type { Rider, Participant, Race, TeamSnapshot, Sport } from '../types';
+import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon, ShareIcon, ArrowDownTrayIcon, MotoIcon, F1Icon } from './Icons';
+import { getTeamForRace, getLatestTeam } from '../lib/utils';
+import { toPng } from 'html-to-image';
+import { Modal } from './Modal';
 
 type AllRiderPoints = Record<number, Record<number, number>>;
 
@@ -20,21 +21,78 @@ interface LeaderboardProps {
     allRiderPoints: AllRiderPoints;
     teamSnapshots: TeamSnapshot[];
     riders: Rider[];
+    sport: Sport;
+    BUDGET: number;
+    TEAM_SIZE: number;
+    currencyPrefix: string;
+    currencySuffix: string;
 }
 
-export const Leaderboard: React.FC<LeaderboardProps> = ({
-    participants,
-    races,
-    leaderboardView,
-    onLeaderboardViewChange,
-    isAdmin,
-    onDeleteParticipant,
-    onUpdateParticipant,
-    allRiderPoints,
-    teamSnapshots,
-    riders,
-}) => {
+interface ShareTeamCardProps {
+    participant: Participant;
+    teamRiders: Rider[];
+    teamCost: number;
+    remainingBudget: number;
+    sport: Sport;
+    currencyPrefix: string;
+    currencySuffix: string;
+    formatPrice: (price: number) => string;
+}
+
+const ShareTeamCard: React.FC<ShareTeamCardProps> = ({ participant, teamRiders, teamCost, remainingBudget, sport, formatPrice }) => {
+    const SportIcon = sport === 'f1' ? F1Icon : MotoIcon;
+    const sportName = sport === 'f1' ? "Formula 1" : "MotoGP";
+
+    return (
+        <div className="bg-gray-900 p-6 rounded-lg border border-gray-700 text-white font-sans">
+            <div className="flex justify-between items-center border-b-2 border-red-600 pb-3 mb-4">
+                <div>
+                    <p className="text-2xl font-bold">{participant.name}</p>
+                    <p className="text-sm text-gray-400">Fantasy Team</p>
+                </div>
+                <div className="text-right">
+                     <SportIcon className="w-10 h-10 text-red-500 mb-1"/>
+                     <p className="font-bold text-red-500">{sportName}</p>
+                </div>
+            </div>
+            
+            <div className="space-y-3 mb-4">
+                {teamRiders.map(rider => (
+                    <div key={rider.id} className="bg-gray-800/70 p-2 rounded-md flex justify-between items-center">
+                        <div>
+                            <p className="font-semibold">{rider.name}</p>
+                            <p className="text-xs text-gray-400">{rider.team}</p>
+                        </div>
+                        <p className="font-mono font-semibold text-lg">{formatPrice(rider.price)}</p>
+                    </div>
+                ))}
+            </div>
+
+            <div className="bg-gray-800/70 p-3 rounded-md text-sm">
+                <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Coste del Equipo:</span>
+                    <span className="font-bold text-white">{formatPrice(teamCost)}</span>
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                    <span className="text-gray-400">Presupuesto Restante:</span>
+                    <span className={`font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>{formatPrice(remainingBudget)}</span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
+    const {
+        participants, races, leaderboardView, onLeaderboardViewChange, isAdmin,
+        onDeleteParticipant, onUpdateParticipant, allRiderPoints, teamSnapshots,
+        riders, sport, BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix
+    } = props;
+    
     const [editingName, setEditingName] = useState<{ id: number; name: string } | null>(null);
+    const [sharingTeam, setSharingTeam] = useState<{ participant: Participant, teamIds: number[] } | null>(null);
+    const cardRef = useRef<HTMLDivElement>(null);
 
     const ridersById = useMemo(() => {
         return riders.reduce((acc, rider) => {
@@ -43,6 +101,10 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         }, {} as Record<number, Rider>);
     }, [riders]);
 
+    const formatPrice = useCallback((price: number): string => {
+        const value = currencySuffix === 'M' ? (price / 10).toFixed(1) : price.toLocaleString('es-ES');
+        return `${currencyPrefix}${value}${currencySuffix}`;
+    }, [currencyPrefix, currencySuffix]);
 
     const handleSaveName = (participantId: number) => {
         if (!editingName || editingName.name.trim() === '') return;
@@ -52,6 +114,21 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         }
         setEditingName(null);
     };
+
+    const handleDownloadImage = useCallback(() => {
+        if (cardRef.current === null || !sharingTeam) return;
+
+        toPng(cardRef.current, { cacheBust: true, backgroundColor: '#111827' })
+            .then((dataUrl) => {
+                const link = document.createElement('a');
+                link.download = `${sharingTeam.participant.name}-fantasy-team.png`;
+                link.href = dataUrl;
+                link.click();
+            })
+            .catch((err) => {
+                console.error('oops, something went wrong!', err);
+            });
+    }, [sharingTeam]);
 
     const getMedal = (index: number) => {
         if (index === 0) return '🥇';
@@ -74,6 +151,23 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         const race = races.find(r => r.id === leaderboardView);
         return race ? `Clasificación ${race.gp_name}` : "Clasificación de la Liga";
     };
+    
+    const sortedRaces = [...races].sort((a,b) => a.round - b.round);
+
+    const sharingTeamData = useMemo(() => {
+        if (!sharingTeam) return null;
+        
+        const teamRiders = sharingTeam.teamIds.map(id => ridersById[id]).filter(Boolean);
+        const teamCost = teamRiders.reduce((total, rider) => total + (rider?.price || 0), 0);
+        const remainingBudget = BUDGET - teamCost;
+        
+        return {
+            teamRiders,
+            teamCost,
+            remainingBudget
+        };
+    }, [sharingTeam, ridersById, BUDGET]);
+
 
     return (
         <div className="flex-grow">
@@ -86,7 +180,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                 >
                     <option value="general">Clasificación General</option>
                     <optgroup label="Por Jornada">
-                        {races.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
+                        {sortedRaces.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
                     </optgroup>
                 </select>
             </div>
@@ -99,7 +193,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                 ) : (
                     participants.map((participant, index) => {
                         const teamIdsForView = leaderboardView === 'general'
-                            ? participant.team_ids // Shows the latest team in general view
+                            ? getLatestTeam(participant.id, races, teamSnapshots)
                             : getTeamForRace(participant.id, leaderboardView, teamSnapshots);
 
                         const teamCost = teamIdsForView.reduce((total, riderId) => {
@@ -125,7 +219,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                             <div className="flex items-baseline gap-2 flex-wrap">
                                                 <h3 className="text-xl font-bold text-white">{participant.name}</h3>
                                                 <span className="text-sm text-gray-400 font-mono">
-                                                    (€{teamCost.toLocaleString('es-ES')})
+                                                    ({formatPrice(teamCost)})
                                                 </span>
                                             </div>
                                         )}
@@ -135,6 +229,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                             <TrophyIcon className="w-5 h-5"/>
                                             <span>{participant.score} pts</span>
                                         </div>
+                                         <button onClick={() => setSharingTeam({ participant, teamIds: teamIdsForView })} className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-full transition-colors"><ShareIcon className="w-5 h-5"/></button>
                                         {isAdmin && (
                                             <>
                                                 {editingName?.id === participant.id ? (
@@ -153,7 +248,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                             <p className="text-xs text-gray-400 mb-2 uppercase">Puntuación por Jornada</p>
                                             {races.length > 0 ? (
                                                 <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
-                                                    {races.map(race => {
+                                                    {sortedRaces.map(race => {
                                                         const teamForRace = getTeamForRace(participant.id, race.id, teamSnapshots);
                                                         const racePointsMap = allRiderPoints[race.id] || {};
                                                         const raceScore = teamForRace.reduce((acc, riderId) => {
@@ -216,6 +311,32 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                     })
                 )}
             </div>
+            
+            {sharingTeam && sharingTeamData && (
+                 <Modal isOpen={!!sharingTeam} onClose={() => setSharingTeam(null)} title={`Equipo de ${sharingTeam.participant.name}`}>
+                    <div>
+                         <div ref={cardRef}>
+                            <ShareTeamCard 
+                                participant={sharingTeam.participant}
+                                teamRiders={sharingTeamData.teamRiders}
+                                teamCost={sharingTeamData.teamCost}
+                                remainingBudget={sharingTeamData.remainingBudget}
+                                sport={sport}
+                                currencyPrefix={currencyPrefix}
+                                currencySuffix={currencySuffix}
+                                formatPrice={formatPrice}
+                            />
+                        </div>
+                        <button
+                            onClick={handleDownloadImage}
+                            className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors duration-300 flex items-center justify-center gap-3"
+                        >
+                            <ArrowDownTrayIcon className="w-6 h-6"/>
+                            Descargar Imagen
+                        </button>
+                    </div>
+                </Modal>
+            )}
         </div>
     );
 };
