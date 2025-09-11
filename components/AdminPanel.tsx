@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { Rider, Race, Sport } from '../types';
 import { PencilIcon, MagnifyingGlassIcon, SparklesIcon } from './Icons';
 import { Modal } from './Modal';
-import { fetchRaceResultsFromAI } from '../services/geminiService';
+import { fetchMotogpRacePositionsFromAI, fetchF1RacePositionsFromAI } from '../services/geminiService';
+import { MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS } from '../constants';
 
 type AllRiderPoints = Record<number, Record<number, number>>;
 
@@ -16,6 +17,7 @@ interface AdminPanelProps {
     riderPoints: AllRiderPoints;
     onPointChange: (riderId: number, points: string) => Promise<void>;
     onUpdateRider: (rider: Rider) => Promise<void>;
+    onBulkUpdatePoints: (roundId: number, newPoints: Map<number, number>, previousRiderIds: number[]) => Promise<void>;
     showToast: (message: string, type: 'success' | 'error') => void;
     sport: Sport;
 }
@@ -33,18 +35,35 @@ const formatDatetimeLocal = (dateStr: string | null | undefined): string => {
 export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
         races, selectedRace, onSelectRace, onUpdateRace, onClearPoints,
-        riders, riderPoints, onPointChange, onUpdateRider, showToast, sport
+        riders, riderPoints, onPointChange, onUpdateRider, onBulkUpdatePoints, showToast, sport
     } = props;
 
     const [editedRaceDate, setEditedRaceDate] = useState('');
     const [editingRider, setEditingRider] = useState<Rider | null>(null);
     const [riderFormData, setRiderFormData] = useState<Rider | null>(null);
     const [isFetchingPoints, setIsFetchingPoints] = useState(false);
+    
+    // MotoGP specific state
+    const [mainRaceResults, setMainRaceResults] = useState<string[]>(Array(15).fill(''));
+    const [sprintRaceResults, setSprintRaceResults] = useState<string[]>(Array(9).fill(''));
+    
+    // F1 specific state
+    const [f1MainRaceResults, setF1MainRaceResults] = useState<string[]>(Array(10).fill(''));
+    const [f1SprintRaceResults, setF1SprintRaceResults] = useState<string[]>(Array(8).fill(''));
+    
+    const [isSavingResults, setIsSavingResults] = useState(false);
 
 
     useEffect(() => {
         setEditedRaceDate(formatDatetimeLocal(selectedRace?.race_date));
-    }, [selectedRace]);
+         if(sport === 'motogp') {
+            setMainRaceResults(Array(15).fill(''));
+            setSprintRaceResults(Array(9).fill(''));
+        } else if (sport === 'f1') {
+            setF1MainRaceResults(Array(10).fill(''));
+            setF1SprintRaceResults(Array(8).fill(''));
+        }
+    }, [selectedRace, sport]);
     
     useEffect(() => {
         if (editingRider) {
@@ -97,58 +116,213 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const normalizeString = (str: string) => 
         str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-    const handleFetchPointsWithAI = async () => {
+    const handleFetchWithAI = async () => {
         if (!selectedRace) {
-            showToast('Por favor, selecciona una jornada para buscar los puntos.', 'error');
+            showToast('Por favor, selecciona una jornada para buscar.', 'error');
             return;
         }
         setIsFetchingPoints(true);
         try {
-            const riderNames = riders.map(r => r.name);
-            const currentYear = new Date().getFullYear();
-            const aiResults = await fetchRaceResultsFromAI(selectedRace.gp_name, riderNames, currentYear, sport);
-            
-            if (!aiResults || aiResults.length === 0) {
-                showToast('La IA no devolvió resultados para esta jornada.', 'success');
-                return;
+            if (sport === 'motogp') {
+                await fetchMotoGPResultsWithAI();
+            } else if (sport === 'f1') {
+                await fetchF1ResultsWithAI();
             }
-
-            let updatedCount = 0;
-            const notFoundNames: string[] = [];
-            
-            const riderNameMap = new Map(riders.map(r => [normalizeString(r.name), r]));
-
-            const updates = aiResults.map(result => {
-                const normalizedName = normalizeString(result.riderName);
-                const rider = riderNameMap.get(normalizedName);
-                if (rider) {
-                    updatedCount++;
-                    return onPointChange(rider.id, String(result.points));
-                } else {
-                    notFoundNames.push(result.riderName);
-                    return Promise.resolve();
-                }
-            });
-            
-            await Promise.all(updates);
-
-            let message = `IA actualizó los puntos de ${updatedCount} pilotos.`;
-            if (notFoundNames.length > 0) {
-                message += ` No se encontraron: ${notFoundNames.join(', ')}.`;
-            }
-            showToast(message, updatedCount > 0 ? 'success' : 'error');
-
         } catch (error) {
-            console.error("Error fetching points from AI:", error);
-            showToast('Error al buscar puntos con la IA.', 'error');
+            console.error("Error fetching data from AI:", error);
+            showToast('Error al buscar datos con la IA.', 'error');
         } finally {
             setIsFetchingPoints(false);
         }
     };
+        
+    const fetchMotoGPResultsWithAI = async () => {
+        if (!selectedRace) return;
+        const riderNames = riders.map(r => r.name);
+        const currentYear = new Date().getFullYear();
+        const aiResults = await fetchMotogpRacePositionsFromAI(selectedRace.gp_name, riderNames, currentYear);
+        
+        if (!aiResults || (aiResults.mainRace.length === 0 && aiResults.sprintRace.length === 0)) {
+            showToast('La IA no devolvió resultados para esta jornada.', 'success');
+            return;
+        }
 
+        const riderNameMap = new Map(riders.map(r => [normalizeString(r.name), r]));
+        
+        const newMainResults = Array(15).fill('');
+        const newSprintResults = Array(9).fill('');
+        let foundMain = 0;
+        let foundSprint = 0;
 
-    const currentRiderPoints = selectedRace ? riderPoints[selectedRace.id] || {} : {};
+        aiResults.mainRace.forEach(res => {
+            const rider = riderNameMap.get(normalizeString(res.riderName));
+            if (rider && res.position > 0 && res.position <= 15) {
+                newMainResults[res.position - 1] = String(rider.id);
+                foundMain++;
+            }
+        });
+        
+        aiResults.sprintRace.forEach(res => {
+            const rider = riderNameMap.get(normalizeString(res.riderName));
+            if (rider && res.position > 0 && res.position <= 9) {
+                newSprintResults[res.position - 1] = String(rider.id);
+                foundSprint++;
+            }
+        });
+
+        setMainRaceResults(newMainResults);
+        setSprintRaceResults(newSprintResults);
+        showToast(`IA encontró ${foundMain} resultados de carrera y ${foundSprint} de sprint.`, 'success');
+    };
+
+    const fetchF1ResultsWithAI = async () => {
+        if (!selectedRace) return;
+        const riderNames = riders.map(r => r.name);
+        const currentYear = new Date().getFullYear();
+        const aiResults = await fetchF1RacePositionsFromAI(selectedRace.gp_name, riderNames, currentYear);
+
+        if (!aiResults || (aiResults.mainRace.length === 0 && aiResults.sprintRace.length === 0)) {
+            showToast('La IA no devolvió resultados para esta jornada.', 'success');
+            return;
+        }
+
+        const riderNameMap = new Map(riders.map(r => [normalizeString(r.name), r]));
+        
+        const newMainResults = Array(10).fill('');
+        const newSprintResults = Array(8).fill('');
+        let foundMain = 0;
+        let foundSprint = 0;
+
+        aiResults.mainRace.forEach(res => {
+            const rider = riderNameMap.get(normalizeString(res.riderName));
+            if (rider && res.position > 0 && res.position <= 10) {
+                newMainResults[res.position - 1] = String(rider.id);
+                foundMain++;
+            }
+        });
+        
+        aiResults.sprintRace.forEach(res => {
+            const rider = riderNameMap.get(normalizeString(res.riderName));
+            if (rider && res.position > 0 && res.position <= 8) {
+                newSprintResults[res.position - 1] = String(rider.id);
+                foundSprint++;
+            }
+        });
+
+        setF1MainRaceResults(newMainResults);
+        setF1SprintRaceResults(newSprintResults);
+        showToast(`IA encontró ${foundMain} resultados de carrera y ${foundSprint} de sprint.`, 'success');
+    };
+
+    const handleSaveMotoGPResults = async () => {
+        if (!selectedRace) return;
+
+        setIsSavingResults(true);
+        const pointsMap = new Map<number, number>();
+
+        mainRaceResults.forEach((riderIdStr, index) => {
+            if (riderIdStr) {
+                const riderId = parseInt(riderIdStr, 10);
+                const currentPoints = pointsMap.get(riderId) || 0;
+                pointsMap.set(riderId, currentPoints + MOTOGP_MAIN_RACE_POINTS[index]);
+            }
+        });
+        
+        sprintRaceResults.forEach((riderIdStr, index) => {
+            if (riderIdStr) {
+                const riderId = parseInt(riderIdStr, 10);
+                const currentPoints = pointsMap.get(riderId) || 0;
+                pointsMap.set(riderId, currentPoints + MOTOGP_SPRINT_RACE_POINTS[index]);
+            }
+        });
+        
+        const previousRiderIds = Object.keys(riderPoints[selectedRace.id] || {}).map(Number);
+        
+        await onBulkUpdatePoints(selectedRace.id, pointsMap, previousRiderIds);
+        setIsSavingResults(false);
+    };
+    
+    const handleSaveF1Results = async () => {
+        if (!selectedRace) return;
+
+        setIsSavingResults(true);
+        const pointsMap = new Map<number, number>();
+
+        f1MainRaceResults.forEach((riderIdStr, index) => {
+            if (riderIdStr) {
+                const riderId = parseInt(riderIdStr, 10);
+                const currentPoints = pointsMap.get(riderId) || 0;
+                pointsMap.set(riderId, currentPoints + F1_MAIN_RACE_POINTS[index]);
+            }
+        });
+        
+        f1SprintRaceResults.forEach((riderIdStr, index) => {
+            if (riderIdStr) {
+                const riderId = parseInt(riderIdStr, 10);
+                const currentPoints = pointsMap.get(riderId) || 0;
+                pointsMap.set(riderId, currentPoints + F1_SPRINT_RACE_POINTS[index]);
+            }
+        });
+        
+        const previousRiderIds = Object.keys(riderPoints[selectedRace.id] || {}).map(Number);
+        
+        await onBulkUpdatePoints(selectedRace.id, pointsMap, previousRiderIds);
+        setIsSavingResults(false);
+    };
+
+    const sortedRiders = useMemo(() => [...riders].sort((a, b) => a.name.localeCompare(b.name)), [riders]);
     const sortedRaces = [...races].sort((a,b) => a.round - b.round);
+    
+    const theme = {
+        focusRing: sport === 'f1' ? 'focus:ring-red-500' : 'focus:ring-orange-500',
+        button: sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600',
+        hoverText: sport === 'f1' ? 'hover:text-red-500' : 'hover:text-orange-500',
+    };
+    
+    const renderResultSelects = (
+        title: string,
+        count: number,
+        results: string[],
+        setResults: React.Dispatch<React.SetStateAction<string[]>>
+    ) => {
+        const handleSelectChange = (index: number, riderId: string) => {
+            const newResults = [...results];
+            newResults[index] = riderId;
+            setResults(newResults);
+        };
+        
+        const selectedIds = new Set(results.filter(Boolean));
+
+        return (
+            <div className="space-y-3">
+                 <h3 className="text-lg font-bold text-gray-200">{title}</h3>
+                {Array.from({ length: count }).map((_, i) => {
+                    const currentSelection = results[i];
+                    return (
+                        <div key={i} className="flex items-center gap-2">
+                            <label className="w-10 text-right text-gray-400 font-semibold">{i + 1}º</label>
+                            <select
+                                value={currentSelection}
+                                onChange={(e) => handleSelectChange(i, e.target.value)}
+                                className={`w-full bg-gray-700 text-white p-1 rounded-md text-sm focus:outline-none focus:ring-1 ${theme.focusRing}`}
+                            >
+                                <option value="">- Seleccionar piloto -</option>
+                                {sortedRiders.map(r => (
+                                    <option 
+                                        key={r.id} 
+                                        value={r.id}
+                                        disabled={selectedIds.has(String(r.id)) && currentSelection !== String(r.id)}
+                                    >
+                                        {r.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    );
+                })}
+            </div>
+        )
+    };
 
     return (
         <aside className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
@@ -172,13 +346,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                 </div>
             </div>
 
-            {/* Points Editor */}
+            {/* Points/Results Editor */}
             <div className="border-t border-gray-700 pt-4">
                  <div className="flex justify-between items-center mb-2">
-                    <h2 className="text-xl font-bold">Editar Puntos</h2>
+                    <h2 className="text-xl font-bold">Editar Resultados</h2>
                     <div className="flex items-center gap-2">
                         <button 
-                            onClick={handleFetchPointsWithAI} 
+                            onClick={handleFetchWithAI} 
                             disabled={!selectedRace || isFetchingPoints} 
                             className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -190,9 +364,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             ) : (
                                 <SparklesIcon className="w-4 h-4" />
                             )}
-                            <span>{isFetchingPoints ? 'Buscando...' : 'Buscar Puntos'}</span>
+                            <span>{isFetchingPoints ? 'Buscando...' : 'Buscar Resultados'}</span>
                         </button>
-                        <button onClick={onClearPoints} disabled={!selectedRace} className="text-sm text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Limpiar</button>
+                        <button onClick={onClearPoints} disabled={!selectedRace} className={`text-sm text-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${theme.hoverText}`}>Limpiar</button>
                     </div>
                 </div>
                 <select
@@ -217,35 +391,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             value={editedRaceDate}
                             onChange={(e) => setEditedRaceDate(e.target.value)}
                             onBlur={handleRaceDateChange}
-                            className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                            className={`w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 ${theme.focusRing}`}
                         />
                     </div>
                 )}
 
                 <div className="max-h-[45vh] overflow-y-auto pr-2 mt-4">
-                    <div className="space-y-3">
-                        {riders.map(rider => (
-                            <div key={rider.id} className="bg-gray-900/50 p-2 rounded-md">
-                                <label htmlFor={`rider-points-${rider.id}`} className="block text-sm font-semibold mb-1 truncate">{rider.name}</label>
-                                 <div className="flex items-center gap-2">
-                                    <label htmlFor={`rider-points-${rider.id}`} className="text-gray-400">Puntos:</label>
-                                    <input
-                                        id={`rider-points-${rider.id}`}
-                                        type="number"
-                                        value={currentRiderPoints[rider.id] ?? ''}
-                                        onChange={(e) => onPointChange(rider.id, e.target.value)}
-                                        className="w-full bg-gray-700 text-white p-1 rounded-md text-right focus:outline-none focus:ring-2 focus:ring-red-500"
-                                        placeholder="0"
-                                        disabled={!selectedRace}
-                                    />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                    {sport === 'motogp' && (
+                        <div className="space-y-6">
+                            {renderResultSelects("Carrera Principal (Top 15)", 15, mainRaceResults, setMainRaceResults)}
+                            {renderResultSelects("Carrera Sprint (Top 9)", 9, sprintRaceResults, setSprintRaceResults)}
+                            <button
+                                onClick={handleSaveMotoGPResults}
+                                disabled={!selectedRace || isSavingResults}
+                                className={`w-full mt-4 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}
+                            >
+                                {isSavingResults ? 'Guardando...' : 'Guardar Resultados'}
+                            </button>
+                        </div>
+                    )}
+                    {sport === 'f1' && (
+                         <div className="space-y-6">
+                            {renderResultSelects("Carrera Principal (Top 10)", 10, f1MainRaceResults, setF1MainRaceResults)}
+                            {renderResultSelects("Carrera Sprint (Top 8)", 8, f1SprintRaceResults, setF1SprintRaceResults)}
+                            <button
+                                onClick={handleSaveF1Results}
+                                disabled={!selectedRace || isSavingResults}
+                                className={`w-full mt-4 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}
+                            >
+                                {isSavingResults ? 'Guardando...' : 'Guardar Resultados'}
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
             
-            <Modal isOpen={!!editingRider} onClose={() => setEditingRider(null)} title={`Editar ${editingRider?.name}`}>
+            <Modal isOpen={!!editingRider} onClose={() => setEditingRider(null)} title={`Editar ${editingRider?.name}`} sport={sport}>
                 {riderFormData && (
                     <form onSubmit={handleSaveRider} className="space-y-4">
                          <div>
@@ -271,7 +452,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 name="condition"
                                 value={riderFormData.condition || ''}
                                 onChange={handleRiderFormChange}
-                                className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                                className={`w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 ${theme.focusRing}`}
                             >
                                 <option value="">Disponible</option>
                                 <option value="Rider is injured">Lesionado</option>
@@ -280,7 +461,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         </div>
                         <div className="flex justify-end gap-3 pt-2">
                              <button type="button" onClick={() => setEditingRider(null)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
-                             <button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Guardar Cambios</button>
+                             <button type="submit" className={`text-white font-bold py-2 px-4 rounded-lg ${theme.button}`}>Guardar Cambios</button>
                         </div>
                     </form>
                 )}

@@ -16,15 +16,15 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, onAdminLogin, onAdminLogout, currentUser, onUserLogout, sport, onSwitchSport }) => {
     
+    const activeButtonStyle = `${sport === 'f1' ? 'bg-red-600' : 'bg-orange-500'} text-white`;
     const navButtonStyle = "px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 flex items-center gap-2 whitespace-nowrap";
-    const activeButtonStyle = "bg-red-600 text-white";
     const inactiveButtonStyle = "text-gray-300 hover:bg-gray-700 hover:text-white";
 
     const SportIcon = sport === 'f1' ? F1Icon : MotoIcon;
     const sportName = sport === 'f1' ? 'F1' : 'MotoGP';
 
     return (
-        <header className="bg-gray-800 shadow-lg shadow-red-600/20 sticky top-0 z-20">
+        <header className={`bg-gray-800 shadow-lg sticky top-0 z-20 ${sport === 'f1' ? 'shadow-red-600/20' : 'shadow-orange-500/20'}`}>
             <div className="container mx-auto px-4 md:px-8 py-3 flex items-center justify-between">
                 <button
                     onClick={onSwitchSport}
@@ -34,7 +34,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, setView, isAdmin, o
                     <SportIcon className="text-3xl"/>
                     <div className="flex items-center">
                         <h1 className="text-xl md:text-2xl font-bold tracking-tight text-white uppercase hidden sm:block">
-                            <span className="text-red-600">{sportName}</span> Fantasy
+                            <span className={sport === 'f1' ? 'text-red-600' : 'text-orange-500'}>{sportName}</span> Fantasy
                         </h1>
                          <ArrowsRightLeftIcon className="w-5 h-5 ml-3 text-gray-500 transition-colors group-hover:text-gray-300 hidden sm:block"/>
                     </div>

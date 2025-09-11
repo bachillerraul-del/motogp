@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Rider } from '../types';
+import type { Rider, Sport } from '../types';
 import { ChartBarIcon } from './Icons';
 
 interface RiderWithScore extends Rider {
@@ -10,6 +10,7 @@ interface RiderLeaderboardProps {
     riders: RiderWithScore[];
     onRiderClick: (rider: RiderWithScore) => void;
     title: string;
+    sport: Sport;
 }
 
 const getRankStyle = (index: number) => {
@@ -19,12 +20,12 @@ const getRankStyle = (index: number) => {
     return 'border-l-4 border-transparent';
 };
 
-export const RiderLeaderboard: React.FC<RiderLeaderboardProps> = ({ riders, onRiderClick, title }) => {
+export const RiderLeaderboard: React.FC<RiderLeaderboardProps> = ({ riders, onRiderClick, title, sport }) => {
     return (
         <aside className="w-full lg:w-1/4">
             <div className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
                 <div className="flex items-center gap-3">
-                    <ChartBarIcon className="w-6 h-6 text-red-500" />
+                    <ChartBarIcon className={`w-6 h-6 ${sport === 'f1' ? 'text-red-500' : 'text-orange-500'}`} />
                     <h2 className="text-xl font-bold">{title}</h2>
                 </div>
 

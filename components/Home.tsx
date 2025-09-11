@@ -65,6 +65,14 @@ export const Home: React.FC<HomeProps> = (props) => {
     }, [deadlineDate]);
 
     const sportName = sport === 'f1' ? 'Formula 1' : 'MotoGP';
+    const theme = {
+        primaryColor: sport === 'f1' ? 'text-red-600' : 'text-orange-500',
+        primaryButton: sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600',
+        primaryBorder: sport === 'f1' ? 'border-red-600/50' : 'border-orange-500/50',
+        primaryShadow: sport === 'f1' ? 'shadow-red-600/10' : 'shadow-orange-500/10',
+        countdownColor: sport === 'f1' ? 'text-red-500' : 'text-orange-400',
+        iconColor: sport === 'f1' ? 'text-red-500' : 'text-orange-500',
+    };
 
     // RENDER DASHBOARD FOR LOGGED-IN USER
     if (currentUser) {
@@ -88,14 +96,13 @@ export const Home: React.FC<HomeProps> = (props) => {
         const totalScore = currentUserData?.score ?? 0;
 
         const latestTeamIds = getLatestTeam(currentUser.id, races, teamSnapshots);
-        const currentTeamRiders = riders.filter(r => latestTeamIds.includes(r.id));
         const ridersById = useMemo(() => new Map(riders.map(r => [r.id, r])), [riders]);
 
 
         return (
             <div className="max-w-6xl mx-auto animate-fadeIn">
                 <div className="mb-10">
-                    <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">Hola, <span className="text-red-600">{currentUser.name}</span></h1>
+                    <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">Hola, <span className={theme.primaryColor}>{currentUser.name}</span></h1>
                     <p className="mt-2 text-lg text-gray-300">Este es tu panel de control para la Fantasy League.</p>
                 </div>
 
@@ -104,7 +111,7 @@ export const Home: React.FC<HomeProps> = (props) => {
                     <div className="lg:col-span-2 space-y-8">
                         {/* Profile Widget */}
                         <div className="bg-gray-800 rounded-lg shadow-lg p-6 flex items-center gap-6">
-                            <UserCircleIcon className="w-16 h-16 text-red-500 flex-shrink-0" />
+                            <UserCircleIcon className={`w-16 h-16 ${theme.iconColor} flex-shrink-0`} />
                             <div className="flex-grow grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="text-center sm:text-left bg-gray-900/50 p-4 rounded-lg">
                                     <p className="text-sm text-gray-400 uppercase">Puntuación Total</p>
@@ -121,12 +128,12 @@ export const Home: React.FC<HomeProps> = (props) => {
                         <div className="bg-gray-800 rounded-lg shadow-lg p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-3">
-                                    <ClipboardDocumentListIcon className="w-8 h-8 text-red-500" />
+                                    <ClipboardDocumentListIcon className={`w-8 h-8 ${theme.iconColor}`} />
                                     <h2 className="text-2xl font-bold text-white">Mi Equipo Actual</h2>
                                 </div>
                                 <button
                                     onClick={onGoToBuilder}
-                                    className="bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors hover:bg-red-700"
+                                    className={`${theme.primaryButton} text-white font-bold py-2 px-4 rounded-lg transition-colors`}
                                 >
                                     Modificar Equipo
                                 </button>
@@ -153,16 +160,16 @@ export const Home: React.FC<HomeProps> = (props) => {
                     {/* Right Column: Next Race */}
                     <div className="lg:col-span-1">
                         {currentRace && deadlineDate ? (
-                             <div className="bg-gray-800 rounded-lg shadow-2xl shadow-red-600/10 p-6 border-2 border-red-600/50 h-full flex flex-col justify-between">
+                             <div className={`bg-gray-800 rounded-lg shadow-2xl p-6 border-2 h-full flex flex-col justify-between ${theme.primaryBorder} ${theme.primaryShadow}`}>
                                 <div className="text-center">
-                                    <p className="text-sm font-bold text-red-500 uppercase tracking-wider">Próxima Carrera</p>
+                                    <p className={`text-sm font-bold uppercase tracking-wider ${theme.primaryColor}`}>Próxima Carrera</p>
                                     <h2 className="text-3xl font-bold text-white mt-1">{currentRace.gp_name}</h2>
                                     <p className="text-gray-400">{formatDate(currentRace.race_date)}</p>
                                 </div>
                                 {isMarketOpen ? (
                                     <div className="mt-6 pt-6 border-t border-gray-700">
-                                         <h3 className="text-lg font-semibold text-center text-red-500 mb-4 uppercase tracking-wider">Cierre de Mercado</h3>
-                                         <Countdown timeRemaining={timeRemaining} />
+                                         <h3 className={`text-lg font-semibold text-center mb-4 uppercase tracking-wider ${theme.primaryColor}`}>Cierre de Mercado</h3>
+                                         <Countdown timeRemaining={timeRemaining} sport={sport}/>
                                     </div>
                                 ) : (
                                     <div className="text-center bg-gray-700/50 py-3 px-6 rounded-lg mt-6">
@@ -188,15 +195,15 @@ export const Home: React.FC<HomeProps> = (props) => {
     return (
         <div className="max-w-5xl mx-auto animate-fadeIn">
             <div className="text-center mb-10">
-                <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">Bienvenido a <span className="text-red-600">{sportName}</span> Fantasy</h1>
+                <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">Bienvenido a <span className={theme.primaryColor}>{sportName}</span> Fantasy</h1>
                 <p className="mt-4 text-lg text-gray-300 max-w-2xl mx-auto">La temporada está en marcha. ¿Tienes lo que se necesita para ser el mejor manager?</p>
             </div>
 
             {currentRace && deadlineDate ? (
-                <div className="bg-gray-800 rounded-lg shadow-2xl shadow-red-600/10 p-6 md:p-8 mb-12 border-2 border-red-600/50">
+                <div className={`bg-gray-800 rounded-lg shadow-2xl p-6 md:p-8 mb-12 border-2 ${theme.primaryBorder} ${theme.primaryShadow}`}>
                     <div className="flex flex-col md:flex-row justify-between items-center gap-6">
                         <div className="text-center md:text-left">
-                            <p className="text-sm font-bold text-red-500 uppercase tracking-wider">Próxima Carrera</p>
+                            <p className={`text-sm font-bold uppercase tracking-wider ${theme.primaryColor}`}>Próxima Carrera</p>
                             <h2 className="text-3xl md:text-4xl font-bold text-white mt-1">{currentRace.gp_name}</h2>
                             <p className="text-gray-400">{currentRace.location}</p>
                              <p className="text-gray-300 mt-2 font-semibold">{formatDate(currentRace.race_date)}</p>
@@ -205,7 +212,7 @@ export const Home: React.FC<HomeProps> = (props) => {
                             {isMarketOpen ? (
                                 <button
                                     onClick={onGoToBuilder}
-                                    className="bg-red-600 text-white font-bold py-4 px-8 rounded-lg text-lg transition-all duration-300 hover:bg-red-700 hover:scale-105 transform shadow-lg"
+                                    className={`${theme.primaryButton} text-white font-bold py-4 px-8 rounded-lg text-lg transition-all duration-300 hover:scale-105 transform shadow-lg`}
                                 >
                                     ¡Crear Equipo Ahora!
                                 </button>
@@ -219,8 +226,8 @@ export const Home: React.FC<HomeProps> = (props) => {
                     </div>
                     {isMarketOpen && (
                         <div className="mt-8 pt-6 border-t border-gray-700">
-                             <h3 className="text-lg font-semibold text-center text-red-500 mb-4 uppercase tracking-wider">Cierre de Mercado en</h3>
-                             <Countdown timeRemaining={timeRemaining} />
+                             <h3 className={`text-lg font-semibold text-center mb-4 uppercase tracking-wider ${theme.primaryColor}`}>Cierre de Mercado en</h3>
+                             <Countdown timeRemaining={timeRemaining} sport={sport} />
                         </div>
                     )}
                 </div>

@@ -14,11 +14,12 @@ interface RiderDetailModalProps {
     races: Race[];
     allRiderPoints: AllRiderPoints;
     onClose: () => void;
+    sport: Sport;
 }
 
 type RiderWithScore = Rider & { score: number };
 
-const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, races, allRiderPoints, onClose }) => {
+const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, races, allRiderPoints, onClose, sport }) => {
     if (!rider) return null;
 
     const sortedRaces = [...races].sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
@@ -28,7 +29,7 @@ const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, races, allRi
     });
 
     return (
-        <Modal isOpen={!!rider} onClose={onClose} title={`Desglose de Puntos: ${rider.name}`}>
+        <Modal isOpen={!!rider} onClose={onClose} title={`Desglose de Puntos: ${rider.name}`} sport={sport}>
             <div className="space-y-4">
                 <div className="flex justify-between items-center bg-gray-900/50 p-3 rounded-lg">
                     <div>
@@ -76,6 +77,7 @@ interface ResultsProps {
     onDeleteParticipant: (participantId: number) => Promise<void>;
     onUpdateRace: (race: Race) => Promise<void>;
     onUpdateRider: (rider: Rider) => Promise<void>;
+    handleBulkUpdatePoints: (roundId: number, newPoints: Map<number, number>, previousRiderIds: number[]) => Promise<void>;
     showToast: (message: string, type: 'success' | 'error') => void;
     allRiderPoints: AllRiderPoints;
     refetchData: () => void;
@@ -84,13 +86,15 @@ interface ResultsProps {
     TEAM_SIZE: number;
     currencyPrefix: string;
     currencySuffix: string;
+    currentUser: Participant | null;
 }
 
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
         participants, races, teamSnapshots, riders, isAdmin, 
-        onUpdateParticipant, onDeleteParticipant, onUpdateRace, onUpdateRider,
-        showToast, allRiderPoints, refetchData, sport, BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix
+        onUpdateParticipant, onDeleteParticipant, onUpdateRace, onUpdateRider, handleBulkUpdatePoints,
+        showToast, allRiderPoints, refetchData, sport, BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix,
+        currentUser
     } = props;
     
     const [selectedRaceForEditing, setSelectedRaceForEditing] = useState<Race | null>(null);
@@ -108,21 +112,41 @@ export const Results: React.FC<ResultsProps> = (props) => {
 
     useEffect(() => {
         if (races.length > 0 && !defaultViewIsSet.current) {
-            const latestRaceWithPoints = [...races]
-                .filter(r => allRiderPoints[r.id] && Object.keys(allRiderPoints[r.id]).length > 0)
-                .sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
+            let defaultRace: Race | undefined;
+
+            // Priority 1: Current user's last team submission
+            if (currentUser) {
+                const userSnapshots = teamSnapshots
+                    .filter(s => s.participant_id === currentUser.id && s.race_id !== null)
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                
+                if (userSnapshots.length > 0) {
+                    const latestRaceId = userSnapshots[0].race_id;
+                    defaultRace = races.find(r => r.id === latestRaceId);
+                }
+            }
+
+            // Priority 2 (Fallback): Latest race with points
+            if (!defaultRace) {
+                defaultRace = [...races]
+                    .filter(r => allRiderPoints[r.id] && Object.keys(allRiderPoints[r.id]).length > 0)
+                    .sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
+            }
+
+            // Priority 3 (Fallback): Latest race in the calendar
+            if (!defaultRace) {
+                defaultRace = [...races].sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
+            }
             
-            const latestRace = latestRaceWithPoints || [...races].sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
-            
-            if (latestRace) {
-                setLeaderboardView(latestRace.id);
+            if (defaultRace) {
+                setLeaderboardView(defaultRace.id);
                 if (!selectedRaceForEditing) {
-                    setSelectedRaceForEditing(latestRace);
+                    setSelectedRaceForEditing(defaultRace);
                 }
             }
             defaultViewIsSet.current = true;
         }
-    }, [races, allRiderPoints, selectedRaceForEditing]);
+    }, [races, allRiderPoints, selectedRaceForEditing, currentUser, teamSnapshots]);
 
     const handlePointChange = async (riderId: number, pointsStr: string) => {
         if (selectedRaceForEditing === null) {
@@ -230,6 +254,8 @@ export const Results: React.FC<ResultsProps> = (props) => {
         return race ? `Pilotos: ${race.gp_name}` : "Clasificación de Pilotos";
     }, [leaderboardView, races]);
 
+    const mobileTabActiveColor = sport === 'f1' ? 'bg-red-600' : 'bg-orange-500';
+
     return (
         <div>
             {isAdmin && (
@@ -259,6 +285,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                             riderPoints={allRiderPoints}
                             onPointChange={handlePointChange}
                             onUpdateRider={onUpdateRider}
+                            onBulkUpdatePoints={handleBulkUpdatePoints}
                             showToast={showToast}
                             sport={sport}
                         />
@@ -270,14 +297,14 @@ export const Results: React.FC<ResultsProps> = (props) => {
                     <div className="mb-4 flex lg:hidden rounded-lg bg-gray-800 p-1 border border-gray-700">
                         <button
                             onClick={() => setMobileView('leaderboard')}
-                            className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'leaderboard' ? 'bg-red-600 text-white' : 'text-gray-300'}`}
+                            className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'leaderboard' ? `${mobileTabActiveColor} text-white` : 'text-gray-300'}`}
                         >
                             <UsersIcon className="w-5 h-5" />
                             Clasificación
                         </button>
                         <button
                             onClick={() => setMobileView('riders')}
-                            className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'riders' ? 'bg-red-600 text-white' : 'text-gray-300'}`}
+                            className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'riders' ? `${mobileTabActiveColor} text-white` : 'text-gray-300'}`}
                         >
                             <ChartBarIcon className="w-5 h-5" />
                             Pilotos
@@ -312,6 +339,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                                 riders={sortedRiders}
                                 onRiderClick={setSelectedRiderDetails}
                                 title={riderLeaderboardTitle}
+                                sport={sport}
                             />
                         </div>
                     </div>
@@ -323,12 +351,14 @@ export const Results: React.FC<ResultsProps> = (props) => {
                 races={races}
                 allRiderPoints={allRiderPoints}
                 onClose={() => setSelectedRiderDetails(null)}
+                sport={sport}
             />
 
             <Modal
                 isOpen={!!participantToDelete}
                 onClose={() => setParticipantToDelete(null)}
                 title="Confirmar Eliminación"
+                sport={sport}
             >
                 <div className="space-y-4 text-center">
                     <p>¿Estás seguro de que quieres eliminar a <strong className="text-white">{participantToDelete?.name}</strong> de la liga?</p>
@@ -337,7 +367,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                         <button onClick={() => setParticipantToDelete(null)} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
                             Cancelar
                         </button>
-                        <button onClick={confirmDeleteParticipant} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                        <button onClick={confirmDeleteParticipant} className={`w-full text-white font-bold py-2 px-4 rounded-lg transition-colors ${sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'}`}>
                             Eliminar
                         </button>
                     </div>
@@ -348,6 +378,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                 isOpen={isConfirmingClearPoints}
                 onClose={() => setIsConfirmingClearPoints(false)}
                 title="Confirmar Limpieza de Puntos"
+                sport={sport}
             >
                 <div className="space-y-4 text-center">
                     <p>¿Estás seguro de que quieres limpiar todos los puntos para la jornada seleccionada?</p>
@@ -356,7 +387,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                         <button onClick={() => setIsConfirmingClearPoints(false)} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
                             Cancelar
                         </button>
-                        <button onClick={confirmClearPoints} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                        <button onClick={confirmClearPoints} className={`w-full text-white font-bold py-2 px-4 rounded-lg transition-colors ${sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'}`}>
                             Limpiar Puntos
                         </button>
                     </div>

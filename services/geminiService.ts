@@ -8,6 +8,17 @@ export interface AIResult {
     points: number;
 }
 
+export interface AIMotogpResult {
+    mainRace: { position: number, riderName: string }[];
+    sprintRace: { position: number, riderName: string }[];
+}
+
+export interface AIF1RacePositionsResult {
+    mainRace: { position: number, riderName: string }[];
+    sprintRace: { position: number, riderName: string }[];
+}
+
+
 export async function fetchRaceResultsFromAI(
     roundName: string,
     allRiderNames: string[],
@@ -70,6 +81,144 @@ export async function fetchRaceResultsFromAI(
     } catch (error) {
         console.error("Error calling Gemini API for race results:", error);
         throw new Error("Failed to get race results from AI.");
+    }
+}
+
+export async function fetchMotogpRacePositionsFromAI(
+    roundName: string,
+    allRiderNames: string[],
+    year: number
+): Promise<AIMotogpResult> {
+
+    const prompt = `
+        You are an expert MotoGP data analyst. Your task is to find the official results for both the main race (top 15) and the sprint race (top 9) for a specific Grand Prix from the ${year} MotoGP season.
+
+        Grand Prix to search for: "${roundName}" from the ${year} season.
+
+        It is CRUCIAL that you match the rider names as closely as possible to the names in this list. If a rider from the official results is on this list, use the name from this list. If they are not on this list, you can omit them.
+        List of known rider names:
+        ${allRiderNames.join(', ')}
+
+        Return your response as a JSON object with two keys: "mainRace" and "sprintRace".
+        - "mainRace" should be an array of objects for the top 15 finishers. Each object must have "position" (integer) and "riderName" (string).
+        - "sprintRace" should be an array of objects for the top 9 finishers. Each object must have "position" (integer) and "riderName" (string).
+        If a race (sprint or main) did not happen or results are not available, return an empty array for that key.
+    `;
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        mainRace: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    position: { type: Type.INTEGER },
+                                    riderName: { type: Type.STRING },
+                                },
+                                required: ["position", "riderName"],
+                            },
+                        },
+                        sprintRace: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    position: { type: Type.INTEGER },
+                                    riderName: { type: Type.STRING },
+                                },
+                                required: ["position", "riderName"],
+                            },
+                        },
+                    },
+                    required: ["mainRace", "sprintRace"],
+                },
+            },
+        });
+
+        const jsonResponse = JSON.parse(response.text.trim());
+        return jsonResponse as AIMotogpResult;
+
+    } catch (error) {
+        console.error("Error calling Gemini API for MotoGP race positions:", error);
+        throw new Error("Failed to get race positions from AI.");
+    }
+}
+
+export async function fetchF1RacePositionsFromAI(
+    roundName: string,
+    allRiderNames: string[],
+    year: number
+): Promise<AIF1RacePositionsResult> {
+
+    const prompt = `
+        You are an expert Formula 1 data analyst. Your task is to find the official results for both the main race (top 10) and the sprint race (top 8) for a specific Grand Prix from the ${year} Formula 1 season.
+
+        Grand Prix to search for: "${roundName}" from the ${year} season.
+
+        It is CRUCIAL that you match the driver names as closely as possible to the names in this list. If a driver from the official results is on this list, use the name from this list. If they are not on this list, you can omit them.
+        List of known driver names:
+        ${allRiderNames.join(', ')}
+
+        Return your response as a JSON object with two keys: "mainRace" and "sprintRace".
+        - "mainRace" should be an array of objects for the top 10 finishers. Each object must have "position" (integer) and "riderName" (string).
+        - "sprintRace" should be an array of objects for the top 8 finishers. Each object must have "position" (integer) and "riderName" (string).
+        If a race (sprint or main) did not happen or results are not available, return an empty array for that key.
+    `;
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        mainRace: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    position: { type: Type.INTEGER },
+                                    riderName: { type: Type.STRING },
+                                },
+                                required: ["position", "riderName"],
+                            },
+                        },
+                        sprintRace: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    position: { type: Type.INTEGER },
+                                    riderName: { type: Type.STRING },
+                                },
+                                required: ["position", "riderName"],
+                            },
+                        },
+                    },
+                    required: ["mainRace", "sprintRace"],
+                },
+            },
+        });
+
+        const jsonResponse = JSON.parse(response.text.trim());
+        return jsonResponse as AIF1RacePositionsResult;
+
+    } catch (error) {
+        console.error("Error calling Gemini API for F1 race positions:", error);
+        throw new Error("Failed to get race positions from AI.");
     }
 }
 

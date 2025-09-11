@@ -239,6 +239,53 @@ export const useFantasyData = (sport: Sport | null) => {
         showToast(`Piloto ${updatedRider.name} actualizado.`, 'success');
     }, [sport, showToast]);
 
+    const handleBulkUpdatePoints = useCallback(async (roundId: number, newPoints: Map<number, number>, previousRiderIds: number[]) => {
+        if (!sport) return;
+        const pointTable = sport === 'f1' ? 'f1_rider_points' : 'rider_points';
+
+        const updates: { round_id: number; rider_id: number; points: number }[] = [];
+        const newPointRiderIds = new Set(newPoints.keys());
+
+        // Add new/updated points
+        for (const [rider_id, points] of newPoints.entries()) {
+            updates.push({ round_id: roundId, rider_id, points });
+        }
+
+        // Set points to 0 for riders who are no longer in the results
+        for (const rider_id of previousRiderIds) {
+            if (!newPointRiderIds.has(rider_id)) {
+                updates.push({ round_id: roundId, rider_id, points: 0 });
+            }
+        }
+
+        if (updates.length === 0) {
+            // If there are no new points but there were previous points, we need to clear them.
+            if(previousRiderIds.length > 0) {
+                const { error } = await supabase.from(pointTable).delete().eq('round_id', roundId);
+                 if (error) {
+                    console.error("Error clearing points:", error);
+                    showToast('Error al limpiar los resultados anteriores.', 'error');
+                } else {
+                    showToast('Resultados limpiados. No hay nuevos puntos que guardar.', 'success');
+                    await fetchData();
+                }
+            } else {
+                showToast('No hay cambios que guardar.', 'success');
+            }
+            return;
+        }
+
+        const { error } = await supabase.from(pointTable).upsert(updates);
+        
+        if (error) {
+            console.error("Error bulk updating points:", error);
+            showToast('Error al guardar los resultados.', 'error');
+        } else {
+            showToast('Resultados guardados con éxito.', 'success');
+            await fetchData();
+        }
+    }, [sport, fetchData, showToast]);
+
     return {
         participants,
         races,
@@ -256,5 +303,6 @@ export const useFantasyData = (sport: Sport | null) => {
         handleDeleteParticipant,
         handleUpdateRace,
         handleUpdateRider,
+        handleBulkUpdatePoints
     };
 };

@@ -3,6 +3,9 @@ import type { Rider, Race } from './types';
 // MotoGP Constants
 export const MOTOGP_TEAM_SIZE = 5;
 export const MOTOGP_BUDGET = 1150;
+export const MOTOGP_MAIN_RACE_POINTS = [25, 20, 16, 13, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+export const MOTOGP_SPRINT_RACE_POINTS = [12, 9, 7, 6, 5, 4, 3, 2, 1];
+
 
 export const MOTOGP_RIDERS: Rider[] = [
     { id: 1, name: 'Marc Marquez', team: 'Ducati Lenovo Team', bike: 'Ducati', price: 600, initial_price: 600 },
@@ -37,6 +40,8 @@ export const MOTOGP_RIDERS: Rider[] = [
 // F1 Constants
 export const F1_TEAM_SIZE = 5;
 export const F1_BUDGET = 659; // Represents $65.9M
+export const F1_MAIN_RACE_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+export const F1_SPRINT_RACE_POINTS = [8, 7, 6, 5, 4, 3, 2, 1];
 
 export const F1_DRIVERS: Rider[] = [
     // Prices are * 10, e.g. 220 = $22.0M

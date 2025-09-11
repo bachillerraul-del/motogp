@@ -28,7 +28,7 @@ const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelec
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-2xl">
             <div
                 onClick={() => onSelect('motogp')}
-                className="bg-gray-800 rounded-lg p-8 text-center transition-all duration-300 hover:bg-red-600 hover:scale-105 cursor-pointer shadow-lg flex flex-col items-center gap-4"
+                className="bg-gray-800 rounded-lg p-8 text-center transition-all duration-300 hover:bg-orange-500 hover:scale-105 cursor-pointer shadow-lg flex flex-col items-center gap-4"
                 role="button"
             >
                 <MotoIcon className="text-7xl"/>
@@ -46,9 +46,9 @@ const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelec
     </div>
 );
 
-const LoadingSpinner: React.FC<{ message: string }> = ({ message }) => (
+const LoadingSpinner: React.FC<{ message: string, sport: Sport | null }> = ({ message, sport }) => (
     <div className="min-h-screen text-white flex flex-col items-center justify-center bg-gray-900">
-        <svg className="animate-spin h-10 w-10 text-red-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <svg className={`animate-spin h-10 w-10 mb-4 ${sport === 'f1' ? 'text-red-600' : 'text-orange-500'}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
@@ -76,7 +76,7 @@ const App: React.FC = () => {
     const {
         participants, races, teamSnapshots, riders, allRiderPoints, loading, toast, setToast,
         showToast, fetchData, addParticipantToLeague, handleUpdateParticipantTeam, handleUpdateParticipant,
-        handleDeleteParticipant, handleUpdateRace, handleUpdateRider
+        handleDeleteParticipant, handleUpdateRace, handleUpdateRider, handleBulkUpdatePoints
     } = useFantasyData(sport);
 
     const constants = useMemo(() => {
@@ -95,6 +95,16 @@ const App: React.FC = () => {
             CURRENCY_SUFFIX: ''
         };
     }, [sport]);
+    
+    // Theme Management
+    useEffect(() => {
+        // Reset body classes and apply the current sport theme
+        document.body.className = 'bg-gray-900';
+        if (sport) {
+            document.body.classList.add(`sport-${sport}`);
+        }
+    }, [sport]);
+
 
     // Auth Management
     useEffect(() => {
@@ -208,7 +218,20 @@ const App: React.FC = () => {
                     });
                 }
 
-                const ridersToUpdate = Array.from(currentRiderPrices.entries()).map(([id, price]) => ({ id, price }));
+                const ridersMap = new Map(riders.map(r => [r.id, r]));
+                const ridersToUpdate = Array.from(currentRiderPrices.entries()).map(([id, newPrice]) => {
+                    const originalRider = ridersMap.get(id);
+                    if (!originalRider) {
+                        console.warn(`Could not find original rider data for ID: ${id}`);
+                        return { id, price: newPrice }; // Fallback
+                    }
+                    return {
+                        ...originalRider,
+                        price: newPrice,
+                        condition: originalRider.condition ?? null,
+                    };
+                });
+
                 const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
                 const { error: riderUpdateError } = await supabase.from(riderTable).upsert(ridersToUpdate);
 
@@ -254,7 +277,7 @@ const App: React.FC = () => {
     }
 
     if (loading) {
-        return <LoadingSpinner message="Cargando datos de la liga..." />;
+        return <LoadingSpinner message="Cargando datos de la liga..." sport={sport} />;
     }
 
     const addParticipantAndSwitchView = async (name: string, team: Rider[], raceId: number): Promise<boolean> => {
@@ -271,7 +294,7 @@ const App: React.FC = () => {
         return (
             <>
                 <Toast toast={toast} onClose={() => setToast(null)} />
-                <Suspense fallback={<LoadingSpinner message="Cargando..." />}>
+                <Suspense fallback={<LoadingSpinner message="Cargando..." sport={sport} />}>
                     <Login
                         participants={participants}
                         onLogin={handleUserLogin}
@@ -299,7 +322,7 @@ const App: React.FC = () => {
                 onSwitchSport={handleSwitchSport}
             />
             <main className="container mx-auto p-4 md:p-8">
-                 <Suspense fallback={<LoadingSpinner message={`Cargando ${view}...`} />}>
+                 <Suspense fallback={<LoadingSpinner message={`Cargando ${view}...`} sport={sport} />}>
                     {view === 'home' && (
                         <Home 
                             races={races}
@@ -343,6 +366,7 @@ const App: React.FC = () => {
                             onDeleteParticipant={handleDeleteParticipant}
                             onUpdateRace={handleUpdateRace}
                             onUpdateRider={handleUpdateRider}
+                            handleBulkUpdatePoints={handleBulkUpdatePoints}
                             showToast={showToast}
                             allRiderPoints={allRiderPoints}
                             refetchData={fetchData}
@@ -351,22 +375,23 @@ const App: React.FC = () => {
                             TEAM_SIZE={constants.TEAM_SIZE}
                             currencyPrefix={constants.CURRENCY_PREFIX}
                             currencySuffix={constants.CURRENCY_SUFFIX}
+                            currentUser={currentUser}
                         />
                     )}
                 </Suspense>
             </main>
-            <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Login">
+            <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Login" sport={sport}>
                 <form onSubmit={handleLogin} className="space-y-4">
                     <div>
                         <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">Email</label>
-                        <input id="email" type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" required />
+                        <input id="email" type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className={`w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 ${sport === 'f1' ? 'focus:ring-red-500' : 'focus:ring-orange-500'}`} required />
                     </div>
                      <div>
                         <label htmlFor="password"className="block text-sm font-medium text-gray-300 mb-1">Contraseña</label>
-                        <input id="password" type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" required />
+                        <input id="password" type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className={`w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 ${sport === 'f1' ? 'focus:ring-red-500' : 'focus:ring-orange-500'}`} required />
                     </div>
                     {loginError && <p className="text-sm text-red-500">{loginError}</p>}
-                    <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                    <button type="submit" className={`w-full text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 ${sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'}`}>
                         Iniciar Sesión
                     </button>
                 </form>

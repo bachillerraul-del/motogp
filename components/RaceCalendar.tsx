@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
-import type { Race } from '../types';
+import type { Race, Sport } from '../types';
 import { CalendarIcon } from './Icons';
 
 interface RaceCalendarProps {
     races: Race[];
+    sport: Sport;
 }
 
 const formatDate = (dateString: string) => {
@@ -15,7 +16,7 @@ const formatDate = (dateString: string) => {
     });
 };
 
-export const RaceCalendar: React.FC<RaceCalendarProps> = ({ races }) => {
+export const RaceCalendar: React.FC<RaceCalendarProps> = ({ races, sport }) => {
     const nextRaceIndex = useMemo(() => {
         const now = new Date();
         return races.findIndex(race => new Date(race.race_date) > now);
@@ -31,10 +32,19 @@ export const RaceCalendar: React.FC<RaceCalendarProps> = ({ races }) => {
         )
     }
 
+    const theme = {
+        primaryColor: sport === 'f1' ? 'text-red-500' : 'text-orange-500',
+        primaryBorder: sport === 'f1' ? 'border-red-600' : 'border-orange-500',
+        nextRaceBorder: sport === 'f1' ? 'border-red-500' : 'border-orange-500',
+        nextRaceShadow: sport === 'f1' ? 'shadow-red-600/20' : 'shadow-orange-500/20',
+        nextRaceText: sport === 'f1' ? 'text-red-400' : 'text-orange-400',
+        nextRaceTextMuted: sport === 'f1' ? 'text-red-500' : 'text-orange-500',
+    }
+
     return (
         <div className="max-w-4xl mx-auto">
-            <div className="flex items-center gap-4 mb-6 border-b-2 border-red-600 pb-3">
-                 <CalendarIcon className="w-8 h-8 text-red-500"/>
+            <div className={`flex items-center gap-4 mb-6 border-b-2 pb-3 ${theme.primaryBorder}`}>
+                 <CalendarIcon className={`w-8 h-8 ${theme.primaryColor}`}/>
                  <h2 className="text-3xl font-bold text-white">Calendario de la Temporada</h2>
             </div>
            
@@ -48,12 +58,12 @@ export const RaceCalendar: React.FC<RaceCalendarProps> = ({ races }) => {
                             key={race.id}
                             className={`
                                 p-4 rounded-lg shadow-lg flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all duration-300
-                                ${isNextRace ? 'bg-gray-800 border-l-4 border-red-500 shadow-red-600/20' : 'bg-gray-800/60'}
+                                ${isNextRace ? `bg-gray-800 border-l-4 ${theme.nextRaceBorder} ${theme.nextRaceShadow}` : 'bg-gray-800/60'}
                                 ${isPastRace ? 'opacity-60' : ''}
                             `}
                         >
                             <div className="flex items-center gap-4">
-                                <span className={`text-2xl font-bold w-12 text-center p-2 rounded-md ${isNextRace ? 'text-red-500' : 'text-gray-400'}`}>
+                                <span className={`text-2xl font-bold w-12 text-center p-2 rounded-md ${isNextRace ? theme.primaryColor : 'text-gray-400'}`}>
                                     {String(race.round).padStart(2, '0')}
                                 </span>
                                 <div>
@@ -62,10 +72,10 @@ export const RaceCalendar: React.FC<RaceCalendarProps> = ({ races }) => {
                                 </div>
                             </div>
                             <div className="sm:ml-auto text-left sm:text-right w-full sm:w-auto mt-2 sm:mt-0 border-t sm:border-none border-gray-700 pt-2 sm:pt-0">
-                                <p className={`font-semibold ${isNextRace ? 'text-red-400 animate-pulse' : 'text-gray-300'}`}>
+                                <p className={`font-semibold ${isNextRace ? `${theme.nextRaceText} animate-pulse` : 'text-gray-300'}`}>
                                     {formatDate(race.race_date)}
                                 </p>
-                                {isNextRace && <p className="text-xs text-red-500 uppercase font-bold tracking-wider mt-1">Próxima Carrera</p>}
+                                {isNextRace && <p className={`text-xs uppercase font-bold tracking-wider mt-1 ${theme.nextRaceTextMuted}`}>Próxima Carrera</p>}
                             </div>
                         </div>
                     );

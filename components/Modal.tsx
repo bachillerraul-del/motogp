@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Sport } from '../types';
 import { CloseIcon } from './Icons';
 
 interface ModalProps {
@@ -6,10 +7,13 @@ interface ModalProps {
     onClose: () => void;
     title: string;
     children: React.ReactNode;
+    sport?: Sport; // Make sport optional for general modals
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, sport }) => {
     if (!isOpen) return null;
+
+    const titleColor = sport === 'f1' ? 'text-red-600' : 'text-orange-500';
 
     return (
         <div 

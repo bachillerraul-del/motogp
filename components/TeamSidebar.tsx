@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Rider, Participant } from '../types';
+import type { Rider, Participant, Sport } from '../types';
 import { XCircleIcon, ExclamationTriangleIcon } from './Icons';
 
 interface TeamSidebarProps {
@@ -16,6 +16,7 @@ interface TeamSidebarProps {
     isSubmitting: boolean;
     submitButtonText: string;
     onSubmit: () => void;
+    sport: Sport;
 }
 
 export const TeamSidebar: React.FC<TeamSidebarProps> = ({
@@ -32,6 +33,7 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
     isSubmitting,
     submitButtonText,
     onSubmit,
+    sport
 }) => {
     const isTeamFull = team.length === teamSize;
     const isBudgetExceeded = remainingBudget < 0;
@@ -78,10 +80,12 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
         return null;
     };
 
+    const teamNameColor = sport === 'f1' ? 'text-red-600' : 'text-orange-500';
+
     return (
         <aside className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
             <h2 className="text-2xl font-bold text-center border-b border-gray-700 pb-3">
-                Tu Equipo: <span className="text-red-600">{teamName}</span>
+                Tu Equipo: <span className={teamNameColor}>{teamName}</span>
             </h2>
             
             {renderBudgetStatus()}

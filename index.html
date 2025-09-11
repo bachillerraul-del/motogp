@@ -14,13 +14,13 @@
       ::-webkit-scrollbar-track {
         background: #1f2937; /* bg-gray-800 */
       }
-      ::-webkit-scrollbar-thumb {
-        background: #dc2626; /* bg-red-600 */
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #ef4444; /* bg-red-500 */
-      }
+      /* F1 Scrollbar */
+      body.sport-f1 ::-webkit-scrollbar-thumb { background: #dc2626; border-radius: 4px; }
+      body.sport-f1 ::-webkit-scrollbar-thumb:hover { background: #ef4444; }
+      /* MotoGP Scrollbar */
+      body.sport-motogp ::-webkit-scrollbar-thumb { background: #f97316; border-radius: 4px; }
+      body.sport-motogp ::-webkit-scrollbar-thumb:hover { background: #ea580c; }
+
       @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }

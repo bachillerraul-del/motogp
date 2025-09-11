@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Rider } from '../types';
+import type { Rider, Sport } from '../types';
 import { PlusIcon, ArrowUpIcon, ArrowDownIcon } from './Icons';
 
 interface RiderCardProps {
@@ -11,9 +11,10 @@ interface RiderCardProps {
     priceChange: number;
     currencyPrefix: string;
     currencySuffix: string;
+    sport: Sport;
 }
 
-export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable, selectedByTeams, priceChange, currencyPrefix, currencySuffix }) => {
+export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable, selectedByTeams, priceChange, currencyPrefix, currencySuffix, sport }) => {
     const isSelectable = !rider.condition?.includes('unavailable') && !rider.condition?.includes('injured');
 
     const formatPrice = (price: number): string => {
@@ -46,8 +47,16 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
         return null;
     };
 
+    const buttonTheme = sport === 'f1'
+        ? 'bg-red-600 hover:bg-red-700'
+        : 'bg-orange-500 hover:bg-orange-600';
+    
+    const cardTheme = sport === 'f1'
+        ? 'hover:shadow-red-600/30'
+        : 'hover:shadow-orange-500/30';
+
     return (
-        <div className={`bg-gray-800 rounded-lg shadow-lg p-4 flex flex-col justify-between transition-all duration-300 hover:shadow-red-600/30 ${!isSelectable ? 'opacity-60' : ''}`}>
+        <div className={`bg-gray-800 rounded-lg shadow-lg p-4 flex flex-col justify-between transition-all duration-300 ${cardTheme} ${!isSelectable ? 'opacity-60' : ''}`}>
             <div>
                 <div className="flex justify-between items-start mb-2">
                     <div>
@@ -69,7 +78,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
             <button
                 onClick={() => onAdd(rider)}
                 disabled={isTeamFull || !isSelectable || !isAffordable}
-                className="mt-4 w-full flex items-center justify-center bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                className={`mt-4 w-full flex items-center justify-center text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed ${buttonTheme}`}
             >
                 <PlusIcon className="w-5 h-5 mr-2" />
                 {getButtonText()}

@@ -155,8 +155,8 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
         );
     }
     
-    const teamName = currentUser?.name || newUserName || 'Nuevo Participante';
     const submitButtonText = currentUser ? 'Actualizar Equipo' : 'Unirse a la Liga';
+    const focusRingColor = sport === 'f1' ? 'focus:ring-red-500' : 'focus:ring-orange-500';
 
     return (
         <div className="flex flex-col lg:flex-row gap-8 pb-24 lg:pb-0">
@@ -175,6 +175,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
                     isSubmitting={isSubmitting}
                     submitButtonText={submitButtonText}
                     onSubmit={handleSubmit}
+                    sport={sport}
                 />
             </div>
 
@@ -186,7 +187,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
                             placeholder="Buscar piloto..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full sm:w-auto flex-grow bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                            className={`w-full sm:w-auto flex-grow bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 ${focusRingColor}`}
                         />
                         <div className="flex items-center gap-2">
                              <span className="text-sm text-gray-400">Ordenar por:</span>
@@ -237,6 +238,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
                             priceChange={rider.price - (rider.initial_price ?? rider.price)}
                             currencyPrefix={currencyPrefix}
                             currencySuffix={currencySuffix}
+                            sport={sport}
                         />
                     ))}
                 </div>

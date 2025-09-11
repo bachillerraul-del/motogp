@@ -45,14 +45,14 @@ const ShareTeamCard: React.FC<ShareTeamCardProps> = ({ participant, teamRiders, 
 
     return (
         <div className="bg-gray-900 p-6 rounded-lg border border-gray-700 text-white font-sans">
-            <div className="flex justify-between items-center border-b-2 border-red-600 pb-3 mb-4">
+            <div className={`flex justify-between items-center border-b-2 pb-3 mb-4 ${sport === 'f1' ? 'border-red-600' : 'border-orange-500'}`}>
                 <div>
                     <p className="text-2xl font-bold">{participant.name}</p>
                     <p className="text-sm text-gray-400">Fantasy Team</p>
                 </div>
                 <div className="text-right">
                      <SportIcon className="text-4xl mb-1"/>
-                     <p className="font-bold text-red-500">{sportName}</p>
+                     <p className={`font-bold ${sport === 'f1' ? 'text-red-500' : 'text-orange-500'}`}>{sportName}</p>
                 </div>
             </div>
             
@@ -199,9 +199,11 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
                         const teamCost = teamIdsForView.reduce((total, riderId) => {
                             return total + (ridersById[riderId]?.price || 0);
                         }, 0);
+                        
+                        const hoverShadow = sport === 'f1' ? 'hover:shadow-red-600/20' : 'hover:shadow-orange-500/20';
 
                         return (
-                            <div key={participant.id} className={`bg-gray-800 rounded-lg shadow-lg p-4 transition-all duration-300 hover:shadow-red-600/20 ${getRankStyle(index)}`}>
+                            <div key={participant.id} className={`bg-gray-800 rounded-lg shadow-lg p-4 transition-all duration-300 ${hoverShadow} ${getRankStyle(index)}`}>
                                 <div className="flex items-center justify-between mb-3">
                                     <div className="flex items-center gap-3">
                                         <span className="text-2xl w-6 text-center">{getMedal(index) || index + 1}</span>
@@ -313,7 +315,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
             </div>
             
             {sharingTeam && sharingTeamData && (
-                 <Modal isOpen={!!sharingTeam} onClose={() => setSharingTeam(null)} title={`Equipo de ${sharingTeam.participant.name}`}>
+                 <Modal isOpen={!!sharingTeam} onClose={() => setSharingTeam(null)} title={`Equipo de ${sharingTeam.participant.name}`} sport={sport}>
                     <div>
                          <div ref={cardRef}>
                             <ShareTeamCard 

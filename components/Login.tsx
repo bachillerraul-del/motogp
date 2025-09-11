@@ -9,10 +9,10 @@ interface LoginProps {
     sport: Sport;
 }
 
-const ParticipantCard: React.FC<{ participant: Participant; onSelect: () => void }> = ({ participant, onSelect }) => (
+const ParticipantCard: React.FC<{ participant: Participant; onSelect: () => void; sport: Sport }> = ({ participant, onSelect, sport }) => (
     <div
         onClick={onSelect}
-        className="bg-gray-800 rounded-lg p-6 text-center transition-all duration-300 hover:bg-red-600 hover:scale-105 cursor-pointer shadow-lg"
+        className={`bg-gray-800 rounded-lg p-6 text-center transition-all duration-300 hover:scale-105 cursor-pointer shadow-lg ${sport === 'f1' ? 'hover:bg-red-600' : 'hover:bg-orange-500'}`}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelect()}
@@ -48,6 +48,12 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
 
     const SportIcon = sport === 'f1' ? F1Icon : MotoIcon;
     const sportName = sport === 'f1' ? 'F1' : 'MotoGP';
+    
+    const theme = {
+        primaryColor: sport === 'f1' ? 'text-red-600' : 'text-orange-500',
+        primaryButton: sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600',
+        focusRing: sport === 'f1' ? 'focus:ring-red-500' : 'focus:ring-orange-500',
+    };
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 animate-fadeIn">
@@ -55,7 +61,7 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
                 <div className="flex justify-center items-center gap-4 mb-4">
                     <SportIcon className="text-5xl"/>
                     <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white uppercase">
-                        <span className="text-red-600">{sportName}</span> Fantasy
+                        <span className={theme.primaryColor}>{sportName}</span> Fantasy
                     </h1>
                 </div>
                 <p className="text-2xl text-gray-300">Selecciona tu perfil para empezar</p>
@@ -65,7 +71,7 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
                 {participants.length > 0 && (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
                         {participants.map(p => (
-                            <ParticipantCard key={p.id} participant={p} onSelect={() => onLogin(p)} />
+                            <ParticipantCard key={p.id} participant={p} onSelect={() => onLogin(p)} sport={sport} />
                         ))}
                     </div>
                 )}
@@ -92,7 +98,7 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
                                     type="text"
                                     value={newName}
                                     onChange={(e) => setNewName(e.target.value)}
-                                    className="w-full bg-gray-800 border border-gray-600 text-white p-3 rounded-md text-center text-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    className={`w-full bg-gray-800 border border-gray-600 text-white p-3 rounded-md text-center text-lg focus:outline-none focus:ring-2 ${theme.focusRing}`}
                                     placeholder="Tu Nombre"
                                     required
                                     autoFocus
@@ -103,7 +109,7 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
                                 <button type="button" onClick={() => { setIsCreating(false); setError(null); }} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
                                     Cancelar
                                 </button>
-                                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                                <button type="submit" className={`w-full text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 ${theme.primaryButton}`}>
                                     Continuar
                                 </button>
                             </div>
