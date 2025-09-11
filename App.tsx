@@ -9,15 +9,17 @@ import { getTeamForRace } from './lib/utils';
 import type { Rider, Participant, TeamSnapshot, Race, Sport } from './types';
 import { MOTOGP_BUDGET, MOTOGP_TEAM_SIZE, F1_BUDGET, F1_TEAM_SIZE } from './constants';
 import { MotoIcon, F1Icon } from './components/Icons';
+import { BottomNav } from './components/BottomNav';
 
 
-type View = 'home' | 'builder' | 'results';
+type View = 'home' | 'builder' | 'results' | 'rules';
 
 const Home = lazy(() => import('./components/Home').then(module => ({ default: module.Home })));
 // FIX: Added .js extension to satisfy module resolution for lazy loading. Although not explicitly required by error, it is a common fix for module resolution issues in React/Vite/Next.js setups.
 const TeamBuilder = lazy(() => import('./components/TeamBuilder').then(module => ({ default: module.TeamBuilder })));
 const Results = lazy(() => import('./components/Results').then(module => ({ default: module.Results })));
 const Login = lazy(() => import('./components/Login').then(module => ({ default: module.Login })));
+const Rules = lazy(() => import('./components/Rules').then(module => ({ default: module.Rules })));
 
 const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelect }) => (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 animate-fadeIn">
@@ -312,7 +314,6 @@ const App: React.FC = () => {
             <Toast toast={toast} onClose={() => setToast(null)} />
             <Header 
                 currentView={view} 
-                setView={setView} 
                 isAdmin={isAdmin}
                 onAdminLogin={() => setIsLoginModalOpen(true)}
                 onAdminLogout={handleAdminLogout}
@@ -321,7 +322,7 @@ const App: React.FC = () => {
                 sport={sport}
                 onSwitchSport={handleSwitchSport}
             />
-            <main className="container mx-auto p-4 md:p-8">
+            <main className="container mx-auto p-4 pb-24">
                  <Suspense fallback={<LoadingSpinner message={`Cargando ${view}...`} sport={sport} />}>
                     {view === 'home' && (
                         <Home 
@@ -378,8 +379,18 @@ const App: React.FC = () => {
                             currentUser={currentUser}
                         />
                     )}
+                     {view === 'rules' && (
+                        <Rules sport={sport}/>
+                    )}
                 </Suspense>
             </main>
+
+            <BottomNav
+                currentView={view}
+                setView={setView}
+                sport={sport}
+            />
+
             <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Login" sport={sport}>
                 <form onSubmit={handleLogin} className="space-y-4">
                     <div>

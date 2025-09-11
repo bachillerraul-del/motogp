@@ -92,8 +92,8 @@ interface ResultsProps {
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
         participants, races, teamSnapshots, riders, isAdmin, 
-        onUpdateParticipant, onDeleteParticipant, onUpdateRace, onUpdateRider, handleBulkUpdatePoints,
-        showToast, allRiderPoints, refetchData, sport, BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix,
+        handleBulkUpdatePoints,
+        showToast, allRiderPoints, refetchData, sport,
         currentUser
     } = props;
     
@@ -187,7 +187,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
 
     const confirmDeleteParticipant = () => {
         if (!participantToDelete) return;
-        onDeleteParticipant(participantToDelete.id);
+        props.onDeleteParticipant(participantToDelete.id);
         setParticipantToDelete(null);
     };
 
@@ -259,89 +259,56 @@ export const Results: React.FC<ResultsProps> = (props) => {
     return (
         <div>
             {isAdmin && (
-                <div className="mb-6 lg:hidden">
+                <div className="mb-6">
                     <button
-                        onClick={() => setIsAdminPanelOpen(!isAdminPanelOpen)}
+                        onClick={() => setIsAdminPanelOpen(true)}
                         className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300"
-                        aria-expanded={isAdminPanelOpen}
-                        aria-controls="admin-panel"
                     >
                         <CogIcon className="w-5 h-5" />
-                        {isAdminPanelOpen ? 'Ocultar Panel de Administrador' : 'Mostrar Panel de Administrador'}
+                        Panel de Administrador
                     </button>
                 </div>
             )}
 
-            <div className="flex flex-col lg:flex-row gap-8">
-                {isAdmin && (
-                    <div id="admin-panel" className={`${isAdminPanelOpen ? 'block' : 'hidden'} lg:block w-full lg:w-1/3 transition-all duration-300`}>
-                        <AdminPanel
-                            races={races}
-                            selectedRace={selectedRaceForEditing}
-                            onSelectRace={setSelectedRaceForEditing}
-                            onUpdateRace={onUpdateRace}
-                            onClearPoints={() => setIsConfirmingClearPoints(true)}
-                            riders={riders}
-                            riderPoints={allRiderPoints}
-                            onPointChange={handlePointChange}
-                            onUpdateRider={onUpdateRider}
-                            onBulkUpdatePoints={handleBulkUpdatePoints}
-                            showToast={showToast}
-                            sport={sport}
+            <div className="flex flex-col gap-8">
+                {/* Mobile Tabs */}
+                <div className="flex lg:hidden rounded-lg bg-gray-800 p-1 border border-gray-700">
+                    <button
+                        onClick={() => setMobileView('leaderboard')}
+                        className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'leaderboard' ? `${mobileTabActiveColor} text-white` : 'text-gray-300'}`}
+                    >
+                        <UsersIcon className="w-5 h-5" />
+                        Clasificación
+                    </button>
+                    <button
+                        onClick={() => setMobileView('riders')}
+                        className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'riders' ? `${mobileTabActiveColor} text-white` : 'text-gray-300'}`}
+                    >
+                        <ChartBarIcon className="w-5 h-5" />
+                        Pilotos
+                    </button>
+                </div>
+
+                <div className="lg:flex lg:gap-8">
+                    {/* Leaderboard Column - visible on mobile if tab is active */}
+                    <div className={`w-full lg:flex-grow ${mobileView === 'leaderboard' ? 'block' : 'hidden'} lg:block`}>
+                        <Leaderboard
+                            {...props}
+                            participants={sortedParticipants}
+                            leaderboardView={leaderboardView}
+                            onLeaderboardViewChange={setLeaderboardView}
+                            onDeleteParticipant={setParticipantToDelete}
                         />
                     </div>
-                )}
-                
-                <div className="flex-grow">
-                     {/* Mobile Tabs */}
-                    <div className="mb-4 flex lg:hidden rounded-lg bg-gray-800 p-1 border border-gray-700">
-                        <button
-                            onClick={() => setMobileView('leaderboard')}
-                            className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'leaderboard' ? `${mobileTabActiveColor} text-white` : 'text-gray-300'}`}
-                        >
-                            <UsersIcon className="w-5 h-5" />
-                            Clasificación
-                        </button>
-                        <button
-                            onClick={() => setMobileView('riders')}
-                            className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'riders' ? `${mobileTabActiveColor} text-white` : 'text-gray-300'}`}
-                        >
-                            <ChartBarIcon className="w-5 h-5" />
-                            Pilotos
-                        </button>
-                    </div>
 
-                    <div className="lg:flex lg:gap-8">
-                        {/* Leaderboard Column - visible on mobile if tab is active */}
-                        <div className={`w-full lg:flex-grow ${mobileView === 'leaderboard' ? 'block' : 'hidden'} lg:block`}>
-                            <Leaderboard
-                                participants={sortedParticipants}
-                                races={races}
-                                leaderboardView={leaderboardView}
-                                onLeaderboardViewChange={setLeaderboardView}
-                                isAdmin={isAdmin}
-                                onDeleteParticipant={setParticipantToDelete}
-                                onUpdateParticipant={onUpdateParticipant}
-                                allRiderPoints={allRiderPoints}
-                                teamSnapshots={teamSnapshots}
-                                riders={riders}
-                                sport={sport}
-                                BUDGET={BUDGET}
-                                TEAM_SIZE={TEAM_SIZE}
-                                currencyPrefix={currencyPrefix}
-                                currencySuffix={currencySuffix}
-                            />
-                        </div>
-
-                         {/* Rider Leaderboard Column - visible on mobile if tab is active */}
-                        <div className={`w-full lg:w-1/4 ${mobileView === 'riders' ? 'block' : 'hidden'} lg:block`}>
-                            <RiderLeaderboard
-                                riders={sortedRiders}
-                                onRiderClick={setSelectedRiderDetails}
-                                title={riderLeaderboardTitle}
-                                sport={sport}
-                            />
-                        </div>
+                        {/* Rider Leaderboard Column - visible on mobile if tab is active */}
+                    <div className={`w-full lg:w-96 ${mobileView === 'riders' ? 'block' : 'hidden'} lg:block`}>
+                        <RiderLeaderboard
+                            riders={sortedRiders}
+                            onRiderClick={setSelectedRiderDetails}
+                            title={riderLeaderboardTitle}
+                            sport={sport}
+                        />
                     </div>
                 </div>
             </div>
@@ -391,6 +358,20 @@ export const Results: React.FC<ResultsProps> = (props) => {
                             Limpiar Puntos
                         </button>
                     </div>
+                </div>
+            </Modal>
+            
+            <Modal isOpen={isAdminPanelOpen} onClose={() => setIsAdminPanelOpen(false)} title="Panel de Administrador" sport={sport}>
+                <div className="max-h-[75vh] overflow-y-auto pr-2 -mr-4">
+                    <AdminPanel
+                        {...props}
+                        riderPoints={allRiderPoints}
+                        selectedRace={selectedRaceForEditing}
+                        onSelectRace={setSelectedRaceForEditing}
+                        onClearPoints={() => { setIsConfirmingClearPoints(true); setIsAdminPanelOpen(false); }}
+                        onPointChange={handlePointChange}
+                        onBulkUpdatePoints={handleBulkUpdatePoints}
+                    />
                 </div>
             </Modal>
         </div>

@@ -3,7 +3,7 @@ import type { Rider, Race, Participant, TeamSnapshot, Sport } from '../types';
 import { RiderCard } from './RiderCard';
 import { TeamSidebar } from './TeamSidebar';
 import { getLatestTeam } from '../lib/utils';
-import { LightBulbIcon, SparklesIcon, ArrowPathIcon } from './Icons';
+import { LightBulbIcon, SparklesIcon, ArrowPathIcon, ClipboardDocumentListIcon } from './Icons';
 import { getAITeamAdvice } from '../services/geminiService';
 
 interface TeamBuilderProps {
@@ -41,6 +41,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isFetchingAdvice, setIsFetchingAdvice] = useState(false);
     const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+    const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
 
     const remainingBudget = useMemo(() => {
         const teamCost = team.reduce((total, rider) => total + rider.price, 0);
@@ -123,6 +124,10 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
             success = await onAddToLeague(newUserName, team, currentRace.id);
         }
 
+        if (success) {
+            setIsTeamModalOpen(false);
+        }
+
         setIsSubmitting(false);
     };
     
@@ -141,11 +146,6 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
         }
     }, [team, remainingBudget, riders, teamRiderIds, sport, showToast]);
 
-    const formatPrice = (price: number): string => {
-        const value = currencySuffix === 'M' ? (price / 10).toFixed(1) : price.toLocaleString('es-ES');
-        return `${currencyPrefix}${value}${currencySuffix}`;
-    }
-
     if (!currentRace) {
         return (
             <div className="text-center py-20 bg-gray-800 rounded-lg">
@@ -159,26 +159,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
     const focusRingColor = sport === 'f1' ? 'focus:ring-red-500' : 'focus:ring-orange-500';
 
     return (
-        <div className="flex flex-col lg:flex-row gap-8 pb-24 lg:pb-0">
-            <div className="w-full lg:w-1/3 xl:w-1/4">
-                <TeamSidebar
-                    team={team}
-                    onRemove={handleRemoveRider}
-                    budget={BUDGET}
-                    remainingBudget={remainingBudget}
-                    teamSize={TEAM_SIZE}
-                    currentUser={currentUser}
-                    newUserName={newUserName}
-                    currencyPrefix={currencyPrefix}
-                    currencySuffix={currencySuffix}
-                    isTeamValid={isTeamValid}
-                    isSubmitting={isSubmitting}
-                    submitButtonText={submitButtonText}
-                    onSubmit={handleSubmit}
-                    sport={sport}
-                />
-            </div>
-
+        <div>
             <div className="flex-grow min-w-0">
                 <div className="bg-gray-800 p-4 rounded-lg shadow-lg mb-6">
                     <div className="flex flex-wrap items-center justify-between gap-4">
@@ -244,30 +225,45 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
                 </div>
             </div>
             
-            {/* Mobile Summary Bar */}
-            <div className="fixed bottom-0 left-0 right-0 bg-gray-800 p-3 border-t border-gray-700 shadow-[0_-4px_10px_rgba(0,0,0,0.3)] z-30 lg:hidden animate-fadeIn">
-                 <div className="container mx-auto flex items-center justify-between gap-4">
-                    <div className="text-center">
-                        <p className="text-xs text-gray-400 uppercase">Presupuesto</p>
-                        <p className={`text-lg font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>
-                            {formatPrice(remainingBudget)}
-                        </p>
+            <button
+                onClick={() => setIsTeamModalOpen(true)}
+                className={`fixed bottom-20 right-4 z-30 flex items-center justify-center w-16 h-16 rounded-full text-white shadow-lg transition-transform hover:scale-110 ${sport === 'f1' ? 'bg-red-600' : 'bg-orange-500'}`}
+                aria-label="Ver mi equipo"
+            >
+                <ClipboardDocumentListIcon className="w-8 h-8" />
+                {team.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                        {team.length}
+                    </span>
+                )}
+            </button>
+
+            {isTeamModalOpen && (
+                 <div 
+                    className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4 animate-fadeIn"
+                    onClick={() => setIsTeamModalOpen(false)}
+                 >
+                    <div className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                        <TeamSidebar
+                            team={team}
+                            onRemove={handleRemoveRider}
+                            budget={BUDGET}
+                            remainingBudget={remainingBudget}
+                            teamSize={TEAM_SIZE}
+                            currentUser={currentUser}
+                            newUserName={newUserName}
+                            currencyPrefix={currencyPrefix}
+                            currencySuffix={currencySuffix}
+                            isTeamValid={isTeamValid}
+                            isSubmitting={isSubmitting}
+                            submitButtonText={submitButtonText}
+                            onSubmit={handleSubmit}
+                            sport={sport}
+                            onClose={() => setIsTeamModalOpen(false)}
+                        />
                     </div>
-                    <div className="text-center">
-                        <p className="text-xs text-gray-400 uppercase">Pilotos</p>
-                        <p className={`text-lg font-bold ${team.length === TEAM_SIZE ? 'text-green-400' : 'text-yellow-400'}`}>
-                            {team.length}/{TEAM_SIZE}
-                        </p>
-                    </div>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={!isTeamValid || isSubmitting}
-                        className="bg-green-600 text-white font-bold py-3 px-5 rounded-lg transition-colors duration-300 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed flex-shrink-0"
-                    >
-                        {isSubmitting ? '...' : submitButtonText}
-                    </button>
-                </div>
-            </div>
+                 </div>
+            )}
         </div>
     );
 };

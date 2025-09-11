@@ -325,7 +325,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     };
 
     return (
-        <aside className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
+        <div className="space-y-4">
             {/* Rider Editor */}
             <div>
                 <h2 className="text-xl font-bold mb-2">Editar Pilotos</h2>
@@ -466,6 +466,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     </form>
                 )}
             </Modal>
-        </aside>
+        </div>
     );
 };

@@ -17,6 +17,7 @@ interface TeamSidebarProps {
     submitButtonText: string;
     onSubmit: () => void;
     sport: Sport;
+    onClose?: () => void;
 }
 
 export const TeamSidebar: React.FC<TeamSidebarProps> = ({
@@ -33,7 +34,8 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
     isSubmitting,
     submitButtonText,
     onSubmit,
-    sport
+    sport,
+    onClose
 }) => {
     const isTeamFull = team.length === teamSize;
     const isBudgetExceeded = remainingBudget < 0;
@@ -83,7 +85,16 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
     const teamNameColor = sport === 'f1' ? 'text-red-600' : 'text-orange-500';
 
     return (
-        <aside className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
+        <aside className="bg-gray-800 p-4 rounded-lg shadow-lg relative space-y-4">
+             {onClose && (
+                <button
+                    onClick={onClose}
+                    className="absolute top-2 right-2 p-2 text-gray-400 hover:text-white rounded-full hover:bg-gray-700 transition-colors z-10"
+                    aria-label="Cerrar"
+                >
+                    <XCircleIcon className="w-6 h-6" />
+                </button>
+            )}
             <h2 className="text-2xl font-bold text-center border-b border-gray-700 pb-3">
                 Tu Equipo: <span className={teamNameColor}>{teamName}</span>
             </h2>
