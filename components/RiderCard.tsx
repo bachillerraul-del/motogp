@@ -5,6 +5,7 @@ import { PlusIcon, ArrowUpIcon, ArrowDownIcon } from './Icons';
 interface RiderCardProps {
     rider: Rider;
     onAdd: (rider: Rider) => void;
+    onSelect: (rider: Rider) => void;
     isTeamFull: boolean;
     isAffordable: boolean;
     selectedByTeams: string[];
@@ -14,7 +15,7 @@ interface RiderCardProps {
     sport: Sport;
 }
 
-export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, isAffordable, selectedByTeams, priceChange, currencyPrefix, currencySuffix, sport }) => {
+export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, isTeamFull, isAffordable, selectedByTeams, priceChange, currencyPrefix, currencySuffix, sport }) => {
     const isSelectable = !rider.condition?.includes('unavailable') && !rider.condition?.includes('injured');
 
     const formatPrice = (price: number): string => {
@@ -57,10 +58,17 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, isTeamFull, 
 
     return (
         <div className={`bg-gray-800 rounded-lg shadow-lg p-4 flex flex-col justify-between transition-all duration-300 ${cardTheme} ${!isSelectable ? 'opacity-60' : ''}`}>
-            <div>
+            <div 
+                className="cursor-pointer group"
+                onClick={() => onSelect(rider)}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelect(rider)}
+                role="button"
+                tabIndex={0}
+                aria-label={`Ver detalles de ${rider.name}`}
+            >
                 <div className="flex justify-between items-start mb-2">
                     <div>
-                        <h3 className="text-xl font-bold text-white">{rider.name}</h3>
+                        <h3 className="text-xl font-bold text-white group-hover:underline">{rider.name}</h3>
                         <p className="text-sm text-gray-400">{rider.team} / {rider.bike}</p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-2">

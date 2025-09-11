@@ -3,7 +3,9 @@ import type { Sport } from '../types';
 import { HomeIcon, PlusCircleIcon, TrophyIcon, BookOpenIcon } from './Icons';
 
 interface BottomNavProps {
-    currentView: 'home' | 'builder' | 'results' | 'rules';
+    // FIX: Updated `currentView` to include 'riderDetail'. The parent component `App.tsx`
+    // can be in a 'riderDetail' state, and this prop needs to accept it to avoid a type error.
+    currentView: 'home' | 'builder' | 'results' | 'rules' | 'riderDetail';
     setView: (view: 'home' | 'builder' | 'results' | 'rules') => void;
     sport: Sport;
 }

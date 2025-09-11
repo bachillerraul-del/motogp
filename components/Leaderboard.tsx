@@ -26,6 +26,7 @@ interface LeaderboardProps {
     TEAM_SIZE: number;
     currencyPrefix: string;
     currencySuffix: string;
+    onSelectRider: (rider: Rider) => void;
 }
 
 interface ShareTeamCardProps {
@@ -87,7 +88,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
     const {
         participants, races, leaderboardView, onLeaderboardViewChange, isAdmin,
         onDeleteParticipant, onUpdateParticipant, allRiderPoints, teamSnapshots,
-        riders, sport, BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix
+        riders, sport, BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix, onSelectRider
     } = props;
     
     const [editingName, setEditingName] = useState<{ id: number; name: string } | null>(null);
@@ -292,9 +293,11 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
                                                                     const riderPoints = roundPointsMap[riderId] || 0;
                                                                     const rider = ridersById[riderId];
                                                                     return (
-                                                                        <li key={riderId} className="bg-gray-700 p-1.5 rounded-md text-center flex flex-col justify-between">
-                                                                            <p className="truncate font-semibold text-xs leading-tight">{rider?.name ?? 'N/A'}</p>
-                                                                            <p className="text-yellow-300 font-bold mt-1">{riderPoints} pts</p>
+                                                                        <li key={riderId} className="bg-gray-700 p-1.5 rounded-md flex flex-col justify-between">
+                                                                            <button onClick={() => rider && onSelectRider(rider)} className="w-full h-full text-center group">
+                                                                                <p className="truncate font-semibold text-xs leading-tight group-hover:underline">{rider?.name ?? 'N/A'}</p>
+                                                                                <p className="text-yellow-300 font-bold mt-1">{riderPoints} pts</p>
+                                                                            </button>
                                                                         </li>
                                                                     );
                                                                 })}

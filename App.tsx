@@ -12,7 +12,7 @@ import { MotoIcon, F1Icon } from './components/Icons';
 import { BottomNav } from './components/BottomNav';
 
 
-type View = 'home' | 'builder' | 'results' | 'rules';
+type View = 'home' | 'builder' | 'results' | 'rules' | 'riderDetail';
 
 const Home = lazy(() => import('./components/Home').then(module => ({ default: module.Home })));
 // FIX: Added .js extension to satisfy module resolution for lazy loading. Although not explicitly required by error, it is a common fix for module resolution issues in React/Vite/Next.js setups.
@@ -20,6 +20,7 @@ const TeamBuilder = lazy(() => import('./components/TeamBuilder').then(module =>
 const Results = lazy(() => import('./components/Results').then(module => ({ default: module.Results })));
 const Login = lazy(() => import('./components/Login').then(module => ({ default: module.Login })));
 const Rules = lazy(() => import('./components/Rules').then(module => ({ default: module.Rules })));
+const RiderDetail = lazy(() => import('./components/RiderDetail').then(module => ({ default: module.RiderDetail })));
 
 const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelect }) => (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 animate-fadeIn">
@@ -61,6 +62,8 @@ const LoadingSpinner: React.FC<{ message: string, sport: Sport | null }> = ({ me
 const App: React.FC = () => {
     const [sport, setSport] = useState<Sport | null>(null);
     const [view, setView] = useState<View>('home');
+    const [previousView, setPreviousView] = useState<View>('home');
+    const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
     
     // Auth State
     const [session, setSession] = useState<Session | null>(null);
@@ -221,26 +224,30 @@ const App: React.FC = () => {
                 }
 
                 const ridersMap = new Map(riders.map(r => [r.id, r]));
+                // FIX: Refactored rider update logic to be more type-safe and handle cases where a rider is not found.
+                // This resolves TypeScript errors related to object spreading and property access on potentially unknown types.
                 const ridersToUpdate = Array.from(currentRiderPrices.entries()).map(([id, newPrice]) => {
                     const originalRider = ridersMap.get(id);
                     if (!originalRider) {
                         console.warn(`Could not find original rider data for ID: ${id}`);
-                        return { id, price: newPrice }; // Fallback
+                        return null; // Mark for removal
                     }
                     return {
                         ...originalRider,
                         price: newPrice,
                         condition: originalRider.condition ?? null,
                     };
-                });
+                }).filter((r): r is Rider => r !== null);
 
-                const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
-                const { error: riderUpdateError } = await supabase.from(riderTable).upsert(ridersToUpdate);
+                if (ridersToUpdate.length > 0) {
+                    const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
+                    const { error: riderUpdateError } = await supabase.from(riderTable).upsert(ridersToUpdate);
 
-                if (riderUpdateError) {
-                    showToast('Error crítico al actualizar los precios de los pilotos.', 'error');
-                    console.error("Rider price update error:", riderUpdateError);
-                    return;
+                    if (riderUpdateError) {
+                        showToast('Error crítico al actualizar los precios de los pilotos.', 'error');
+                        console.error("Rider price update error:", riderUpdateError);
+                        return;
+                    }
                 }
 
                 const raceIdsToUpdate = unprocessedPastRaces.map(r => r.id);
@@ -273,6 +280,17 @@ const App: React.FC = () => {
         setSport(prevSport => (prevSport === 'motogp' ? 'f1' : 'motogp'));
         setView('home');
     };
+
+    const handleSelectRider = useCallback((rider: Rider) => {
+        setPreviousView(view);
+        setSelectedRider(rider);
+        setView('riderDetail');
+    }, [view]);
+
+    const handleBack = useCallback(() => {
+        setView(previousView);
+        setSelectedRider(null);
+    }, [previousView]);
 
     if (!sport) {
         return <SportSelector onSelect={setSport} />;
@@ -354,6 +372,7 @@ const App: React.FC = () => {
                             currencyPrefix={constants.CURRENCY_PREFIX}
                             currencySuffix={constants.CURRENCY_SUFFIX}
                             sport={sport}
+                            onSelectRider={handleSelectRider}
                         />
                     )}
                     {view === 'results' && (
@@ -377,10 +396,24 @@ const App: React.FC = () => {
                             currencyPrefix={constants.CURRENCY_PREFIX}
                             currencySuffix={constants.CURRENCY_SUFFIX}
                             currentUser={currentUser}
+                            onSelectRider={handleSelectRider}
                         />
                     )}
                      {view === 'rules' && (
                         <Rules sport={sport}/>
+                    )}
+                    {view === 'riderDetail' && selectedRider && (
+                        <RiderDetail
+                            rider={selectedRider}
+                            races={races}
+                            allRiderPoints={allRiderPoints}
+                            participants={participants}
+                            teamSnapshots={teamSnapshots}
+                            sport={sport}
+                            onBack={handleBack}
+                            currencyPrefix={constants.CURRENCY_PREFIX}
+                            currencySuffix={constants.CURRENCY_SUFFIX}
+                        />
                     )}
                 </Suspense>
             </main>

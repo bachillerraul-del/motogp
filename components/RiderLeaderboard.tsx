@@ -8,7 +8,7 @@ interface RiderWithScore extends Rider {
 
 interface RiderLeaderboardProps {
     riders: RiderWithScore[];
-    onRiderClick: (rider: RiderWithScore) => void;
+    onSelectRider: (rider: RiderWithScore) => void;
     title: string;
     sport: Sport;
 }
@@ -20,9 +20,9 @@ const getRankStyle = (index: number) => {
     return 'border-l-4 border-transparent';
 };
 
-export const RiderLeaderboard: React.FC<RiderLeaderboardProps> = ({ riders, onRiderClick, title, sport }) => {
+export const RiderLeaderboard: React.FC<RiderLeaderboardProps> = ({ riders, onSelectRider, title, sport }) => {
     return (
-        <aside className="w-full lg:w-1/4">
+        <aside className="w-full lg:w-96">
             <div className="bg-gray-800 p-4 rounded-lg shadow-lg sticky top-24 space-y-4">
                 <div className="flex items-center gap-3">
                     <ChartBarIcon className={`w-6 h-6 ${sport === 'f1' ? 'text-red-500' : 'text-orange-500'}`} />
@@ -39,7 +39,11 @@ export const RiderLeaderboard: React.FC<RiderLeaderboardProps> = ({ riders, onRi
                             <div 
                                 key={rider.id} 
                                 className={`bg-gray-900/70 rounded-md p-2 flex items-center justify-between transition-all duration-200 hover:bg-gray-900 cursor-pointer ${getRankStyle(index)}`}
-                                onClick={() => onRiderClick(rider)}
+                                onClick={() => onSelectRider(rider)}
+                                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelectRider(rider)}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Ver detalles de ${rider.name}`}
                             >
                                 <div className="flex items-center gap-3 overflow-hidden">
                                     <span className="font-bold text-gray-400 w-6 text-center">{index + 1}</span>

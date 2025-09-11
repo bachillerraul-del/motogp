@@ -3,7 +3,7 @@ import { MotoIcon, LoginIcon, LogoutIcon, UserIcon, F1Icon } from './Icons';
 import type { Participant, Sport } from '../types';
 
 interface HeaderProps {
-    currentView: 'home' | 'builder' | 'results' | 'rules';
+    currentView: 'home' | 'builder' | 'results' | 'rules' | 'riderDetail';
     isAdmin: boolean;
     onAdminLogin: () => void;
     onAdminLogout: () => void;
@@ -21,7 +21,8 @@ export const Header: React.FC<HeaderProps> = ({ currentView, isAdmin, onAdminLog
         home: 'Inicio',
         builder: 'Crear Equipo',
         results: 'Resultados',
-        rules: 'Reglas del Juego'
+        rules: 'Reglas del Juego',
+        riderDetail: 'Detalles del Piloto'
     };
 
     return (

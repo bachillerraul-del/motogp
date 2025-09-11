@@ -8,64 +8,7 @@ import { RiderLeaderboard } from './RiderLeaderboard';
 import { TrophyIcon, CogIcon, UsersIcon, ChartBarIcon } from './Icons';
 import { getTeamForRace } from '../lib/utils';
 
-// Modal for rider point details
-interface RiderDetailModalProps {
-    rider: RiderWithScore | null;
-    races: Race[];
-    allRiderPoints: AllRiderPoints;
-    onClose: () => void;
-    sport: Sport;
-}
-
 type RiderWithScore = Rider & { score: number };
-
-const RiderDetailModal: React.FC<RiderDetailModalProps> = ({ rider, races, allRiderPoints, onClose, sport }) => {
-    if (!rider) return null;
-
-    const sortedRaces = [...races].sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
-    const riderHasPoints = sortedRaces.some(race => {
-        const points = allRiderPoints[race.id]?.[rider.id];
-        return points && points > 0;
-    });
-
-    return (
-        <Modal isOpen={!!rider} onClose={onClose} title={`Desglose de Puntos: ${rider.name}`} sport={sport}>
-            <div className="space-y-4">
-                <div className="flex justify-between items-center bg-gray-900/50 p-3 rounded-lg">
-                    <div>
-                        <p className="text-lg font-bold text-white">{rider.name}</p>
-                        <p className="text-sm text-gray-400">{rider.team}</p>
-                    </div>
-                    <div className="flex items-center gap-2 bg-yellow-400/10 text-yellow-300 font-bold px-4 py-2 rounded-full text-lg">
-                        <TrophyIcon className="w-6 h-6"/>
-                        <span>{rider.score} pts</span>
-                    </div>
-                </div>
-
-                <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-3">
-                    <h3 className="text-md font-semibold text-gray-300 uppercase tracking-wider border-b border-gray-700 pb-2">Puntos por Jornada</h3>
-                    {riderHasPoints ? (
-                        sortedRaces.map(race => {
-                            const points = allRiderPoints[race.id]?.[rider.id] || 0;
-
-                            if (points === 0) return null;
-
-                            return (
-                                <div key={race.id} className="bg-gray-700/50 p-3 rounded-md flex justify-between items-center">
-                                    <p className="font-semibold text-white">{race.gp_name}</p>
-                                    <p className="font-bold text-lg text-yellow-300">{points} pts</p>
-                                </div>
-                            );
-                        })
-                    ) : (
-                        <p className="text-center text-gray-500 py-4">Este piloto aún no ha conseguido puntos.</p>
-                    )}
-                </div>
-            </div>
-        </Modal>
-    );
-};
-
 
 interface ResultsProps {
     participants: Participant[];
@@ -87,6 +30,7 @@ interface ResultsProps {
     currencyPrefix: string;
     currencySuffix: string;
     currentUser: Participant | null;
+    onSelectRider: (rider: Rider) => void;
 }
 
 export const Results: React.FC<ResultsProps> = (props) => {
@@ -94,12 +38,11 @@ export const Results: React.FC<ResultsProps> = (props) => {
         participants, races, teamSnapshots, riders, isAdmin, 
         handleBulkUpdatePoints,
         showToast, allRiderPoints, refetchData, sport,
-        currentUser
+        currentUser, onSelectRider
     } = props;
     
     const [selectedRaceForEditing, setSelectedRaceForEditing] = useState<Race | null>(null);
     const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
-    const [selectedRiderDetails, setSelectedRiderDetails] = useState<RiderWithScore | null>(null);
     const defaultViewIsSet = useRef(false);
     
     // Mobile-specific state
@@ -298,6 +241,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                             leaderboardView={leaderboardView}
                             onLeaderboardViewChange={setLeaderboardView}
                             onDeleteParticipant={setParticipantToDelete}
+                            onSelectRider={onSelectRider}
                         />
                     </div>
 
@@ -305,7 +249,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                     <div className={`w-full lg:w-96 ${mobileView === 'riders' ? 'block' : 'hidden'} lg:block`}>
                         <RiderLeaderboard
                             riders={sortedRiders}
-                            onRiderClick={setSelectedRiderDetails}
+                            onSelectRider={onSelectRider}
                             title={riderLeaderboardTitle}
                             sport={sport}
                         />
@@ -313,14 +257,6 @@ export const Results: React.FC<ResultsProps> = (props) => {
                 </div>
             </div>
             
-            <RiderDetailModal 
-                rider={selectedRiderDetails}
-                races={races}
-                allRiderPoints={allRiderPoints}
-                onClose={() => setSelectedRiderDetails(null)}
-                sport={sport}
-            />
-
             <Modal
                 isOpen={!!participantToDelete}
                 onClose={() => setParticipantToDelete(null)}

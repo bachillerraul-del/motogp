@@ -22,12 +22,13 @@ interface TeamBuilderProps {
     currencyPrefix: string;
     currencySuffix: string;
     sport: Sport;
+    onSelectRider: (rider: Rider) => void;
 }
 
 export const TeamBuilder: React.FC<TeamBuilderProps> = ({
     races, riders, participants, teamSnapshots, onAddToLeague, onUpdateTeam,
     showToast, currentRace, currentUser, newUserName,
-    BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix, sport
+    BUDGET, TEAM_SIZE, currencyPrefix, currencySuffix, sport, onSelectRider
 }) => {
     const getInitialTeam = () => {
         if (!currentUser) return [];
@@ -213,6 +214,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
                             key={rider.id}
                             rider={rider}
                             onAdd={handleAddRider}
+                            onSelect={onSelectRider}
                             isTeamFull={team.length >= TEAM_SIZE}
                             isAffordable={remainingBudget >= rider.price}
                             selectedByTeams={getSelectedByTeams(rider.id)}
