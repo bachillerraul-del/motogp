@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useMemo, Suspense, lazy } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
@@ -184,60 +185,103 @@ const App: React.FC = () => {
                 
                 for (const race of unprocessedPastRaces) {
                     const riderSelectionCounts = new Map<number, number>();
-                    participants.forEach(p => {
+                    
+                    const participantsWithTeamsForRace = participants.filter(p => {
+                        const teamForRace = getTeamForRace(p.id, race.id, teamSnapshots);
+                        return teamForRace.length > 0;
+                    });
+                    
+                    if (participantsWithTeamsForRace.length === 0) continue;
+
+                    participantsWithTeamsForRace.forEach(p => {
                         const teamForRace = getTeamForRace(p.id, race.id, teamSnapshots);
                         teamForRace.forEach(riderId => {
                             riderSelectionCounts.set(riderId, (riderSelectionCounts.get(riderId) || 0) + 1);
                         });
                     });
                     
-                    currentRiderPrices.forEach((currentPrice, riderId) => {
-                        const selectionCount = riderSelectionCounts.get(riderId) || 0;
-                        const rider = riders.find(r => r.id === riderId);
-                        let newPrice = currentPrice;
+                    const totalParticipantsForRace = participantsWithTeamsForRace.length;
+                    
+                    const priceChanges = new Map<number, number>();
+                    
+                    const dominantRiders: number[] = []; // > 75%
+                    const veryPopularRiders: number[] = []; // > 50%
+                    const popularRiders: number[] = []; // > 25%
+                    const differentialRiders: number[] = []; // > 0% and <= 25%
+                    const unpopularRiders: number[] = []; // 0%
 
-                        if (sport === 'motogp') {
-                            // Tiered logic for MotoGP
-                            if (selectionCount === 0 && !rider?.condition) {
-                                newPrice = Math.max(100, currentPrice - 10); // Price drops, with a floor of €100
-                            } else if (selectionCount === 1) {
-                                newPrice = currentPrice + 5; // Small increase for a differential pick
-                            } else if (selectionCount === 2) {
-                                newPrice = currentPrice + 10; // Medium increase for popular pick
-                            } else if (selectionCount >= 3) {
-                                newPrice = currentPrice + 20; // High demand, significant increase
+                    riders.forEach(rider => {
+                        const selectionCount = riderSelectionCounts.get(rider.id) || 0;
+                        const popularityPercent = totalParticipantsForRace > 0 ? (selectionCount / totalParticipantsForRace) * 100 : 0;
+
+                        if (popularityPercent > 75) {
+                            dominantRiders.push(rider.id);
+                        } else if (popularityPercent > 50) {
+                            veryPopularRiders.push(rider.id);
+                        } else if (popularityPercent > 25) {
+                            popularRiders.push(rider.id);
+                        } else if (popularityPercent > 0) {
+                            // These riders' prices don't change, but can be candidates for decrease if needed.
+                             if (!rider.condition) {
+                                 differentialRiders.push(rider.id);
                             }
-                        } else if (sport === 'f1') {
-                             // Tiered logic for F1 (prices are x10 for millions)
-                            if (selectionCount === 0 && !rider?.condition) {
-                                newPrice = Math.max(50, currentPrice - 5); // Price drops by $0.5M, floor of $5.0M
-                            } else if (selectionCount === 1) {
-                                newPrice = currentPrice + 5; // Small increase of $0.5M
-                            } else if (selectionCount === 2) {
-                                newPrice = currentPrice + 10; // Medium increase of $1.0M
-                            } else if (selectionCount >= 3) {
-                                newPrice = currentPrice + 20; // High demand, significant increase of $2.0M
+                        } else { // selectionCount === 0
+                            if (!rider.condition) {
+                                unpopularRiders.push(rider.id);
                             }
                         }
+                    });
+
+                    let totalIncrease = 0;
+                    dominantRiders.forEach(id => { priceChanges.set(id, 30); totalIncrease += 30; });
+                    veryPopularRiders.forEach(id => { priceChanges.set(id, 20); totalIncrease += 20; });
+                    popularRiders.forEach(id => { priceChanges.set(id, 10); totalIncrease += 10; });
+
+                    let decreaseCandidates = unpopularRiders;
+                    if (decreaseCandidates.length === 0) {
+                        decreaseCandidates = differentialRiders;
+                    }
+
+                    decreaseCandidates.sort((a, b) => {
+                        const priceA = currentRiderPrices.get(a) || 0;
+                        const priceB = currentRiderPrices.get(b) || 0;
+                        return priceB - priceA; // Higher price first
+                    });
+                    
+                    let decreaseToDistribute = totalIncrease;
+                    if (decreaseCandidates.length > 0) {
+                        let candidateIndex = 0;
+                        while (decreaseToDistribute >= 10) {
+                            const riderId = decreaseCandidates[candidateIndex];
+                            const currentChange = priceChanges.get(riderId) || 0;
+                            priceChanges.set(riderId, currentChange - 10);
+                            decreaseToDistribute -= 10;
+                            candidateIndex = (candidateIndex + 1) % decreaseCandidates.length;
+                        }
+                    }
+
+                    priceChanges.forEach((change, riderId) => {
+                        const currentPrice = currentRiderPrices.get(riderId) || 0;
+                        let newPrice = currentPrice + change;
+                        // Prevent negative prices as a basic safeguard
+                        newPrice = Math.max(0, newPrice);
                         currentRiderPrices.set(riderId, newPrice);
                     });
                 }
 
                 const ridersMap = new Map(riders.map(r => [r.id, r]));
-                // FIX: Refactored rider update logic to be more type-safe and handle cases where a rider is not found.
-                // This resolves TypeScript errors related to object spreading and property access on potentially unknown types.
                 const ridersToUpdate = Array.from(currentRiderPrices.entries()).map(([id, newPrice]) => {
                     const originalRider = ridersMap.get(id);
                     if (!originalRider) {
                         console.warn(`Could not find original rider data for ID: ${id}`);
-                        return null; // Mark for removal
+                        return null;
                     }
                     return {
                         ...originalRider,
                         price: newPrice,
                         condition: originalRider.condition ?? null,
                     };
-                }).filter((r): r is Rider => r !== null);
+                }).filter((r): r is NonNullable<typeof r> => r !== null);
 
                 if (ridersToUpdate.length > 0) {
                     const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';

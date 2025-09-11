@@ -53,12 +53,12 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
 
     const filteredAndSortedRiders = useMemo(() => {
         return [...riders]
-            .filter(rider => rider.name.toLowerCase().includes(searchTerm.toLowerCase()) && !teamRiderIds.has(rider.id))
+            .filter(rider => rider.name.toLowerCase().includes(searchTerm.toLowerCase()))
             .sort((a, b) => {
                 if (sortBy === 'price') return b.price - a.price;
                 return a.name.localeCompare(b.name);
             });
-    }, [riders, searchTerm, teamRiderIds, sortBy]);
+    }, [riders, searchTerm, sortBy]);
     
     const teamSelectionCounts = useMemo(() => {
         const counts = new Map<number, number>();
@@ -222,6 +222,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = ({
                             currencyPrefix={currencyPrefix}
                             currencySuffix={currencySuffix}
                             sport={sport}
+                            isInTeam={teamRiderIds.has(rider.id)}
                         />
                     ))}
                 </div>

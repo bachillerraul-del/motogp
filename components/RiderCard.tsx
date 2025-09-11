@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Rider, Sport } from '../types';
-import { PlusIcon, ArrowUpIcon, ArrowDownIcon } from './Icons';
+import { PlusIcon, ArrowUpIcon, ArrowDownIcon, CheckIcon } from './Icons';
 
 interface RiderCardProps {
     rider: Rider;
@@ -8,6 +8,7 @@ interface RiderCardProps {
     onSelect: (rider: Rider) => void;
     isTeamFull: boolean;
     isAffordable: boolean;
+    isInTeam: boolean;
     selectedByTeams: string[];
     priceChange: number;
     currencyPrefix: string;
@@ -15,7 +16,7 @@ interface RiderCardProps {
     sport: Sport;
 }
 
-export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, isTeamFull, isAffordable, selectedByTeams, priceChange, currencyPrefix, currencySuffix, sport }) => {
+export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, isTeamFull, isAffordable, isInTeam, selectedByTeams, priceChange, currencyPrefix, currencySuffix, sport }) => {
     const isSelectable = !rider.condition?.includes('unavailable') && !rider.condition?.includes('injured');
 
     const formatPrice = (price: number): string => {
@@ -24,6 +25,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
     }
 
     const getButtonText = () => {
+        if (isInTeam) return 'En tu Equipo';
         if (!isSelectable) return 'No Disponible';
         if (isTeamFull) return 'Equipo Lleno';
         if (!isAffordable) return 'Excede Presupuesto';
@@ -57,7 +59,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
         : 'hover:shadow-orange-500/30';
 
     return (
-        <div className={`bg-gray-800 rounded-lg shadow-lg p-4 flex flex-col justify-between transition-all duration-300 ${cardTheme} ${!isSelectable ? 'opacity-60' : ''}`}>
+        <div className={`bg-gray-800 rounded-lg shadow-lg p-4 flex flex-col justify-between transition-all duration-300 ${cardTheme} ${!isSelectable ? 'opacity-60' : ''} ${isInTeam ? 'ring-2 ring-green-500' : ''}`}>
             <div 
                 className="cursor-pointer group"
                 onClick={() => onSelect(rider)}
@@ -85,10 +87,15 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
             </div>
             <button
                 onClick={() => onAdd(rider)}
-                disabled={isTeamFull || !isSelectable || !isAffordable}
-                className={`mt-4 w-full flex items-center justify-center text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed ${buttonTheme}`}
+                disabled={isInTeam || isTeamFull || !isSelectable || !isAffordable}
+                className={`mt-4 w-full flex items-center justify-center text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300
+                    ${isInTeam
+                        ? 'bg-green-600 disabled:opacity-75 cursor-default'
+                        : `${buttonTheme} disabled:bg-gray-600 disabled:cursor-not-allowed`
+                    }
+                `}
             >
-                <PlusIcon className="w-5 h-5 mr-2" />
+                {isInTeam ? <CheckIcon className="w-5 h-5 mr-2" /> : <PlusIcon className="w-5 h-5 mr-2" />}
                 {getButtonText()}
             </button>
         </div>

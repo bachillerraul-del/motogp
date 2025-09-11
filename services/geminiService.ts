@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Rider, Participant, TeamSnapshot, Sport } from '../types';
 
@@ -232,11 +233,11 @@ export async function getAITeamAdvice(
     const sportContext = {
         motogp: {
             name: "MotoGP",
-            rules: "El equipo debe tener 5 pilotos y un presupuesto máximo de 1150€. Los precios son en euros."
+            rules: "El equipo debe tener 5 pilotos y un presupuesto máximo de 1000€. Los precios son en euros."
         },
         f1: {
             name: "Fórmula 1",
-            rules: "El equipo debe tener 5 pilotos y un presupuesto máximo de 65.9M$. Los precios están multiplicados por 10 (ej. 220 es 22.0M$).",
+            rules: "El equipo debe tener 5 pilotos y un presupuesto máximo de 100.0M$. Los precios están multiplicados por 10 (ej. 220 es 22.0M$).",
         }
     };
 

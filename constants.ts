@@ -1,7 +1,8 @@
-export const MOTOGP_BUDGET = 1150;
+
+export const MOTOGP_BUDGET = 1000;
 export const MOTOGP_TEAM_SIZE = 5;
 
-export const F1_BUDGET = 659; // Representing 65.9M, as logic in app divides by 10
+export const F1_BUDGET = 1000; // Representing 100.0M, as logic in app divides by 10
 export const F1_TEAM_SIZE = 5;
 
 // Points based on standard scoring systems

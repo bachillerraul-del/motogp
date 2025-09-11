@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import type { Rider, Race, Participant, TeamSnapshot, AllRiderPoints, Sport } from '../types';
 import { getLatestTeam, getTeamForRace } from '../lib/utils';
@@ -77,33 +78,39 @@ export const RiderDetail: React.FC<RiderDetailProps> = (props) => {
             .sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
 
         for (const race of sortedAdjustedRaces) {
-            let selectionCount = 0;
-            participants.forEach(p => {
-                const teamForRace = getTeamForRace(p.id, race.id, teamSnapshots);
-                if (teamForRace.includes(rider.id)) {
-                    selectionCount++;
-                }
-            });
+            const participantsWithTeamsForRace = participants.filter(p => getTeamForRace(p.id, race.id, teamSnapshots).length > 0);
+            const totalParticipantsForRace = participantsWithTeamsForRace.length;
 
-            let newPrice = currentPrice;
-            if (sport === 'motogp') {
-                if (selectionCount === 0 && !rider.condition) newPrice = Math.max(100, currentPrice - 10);
-                else if (selectionCount === 1) newPrice = currentPrice + 5;
-                else if (selectionCount === 2) newPrice = currentPrice + 10;
-                else if (selectionCount >= 3) newPrice = currentPrice + 20;
-            } else if (sport === 'f1') {
-                if (selectionCount === 0 && !rider.condition) newPrice = Math.max(50, currentPrice - 5);
-                else if (selectionCount === 1) newPrice = currentPrice + 5;
-                else if (selectionCount === 2) newPrice = currentPrice + 10;
-                else if (selectionCount >= 3) newPrice = currentPrice + 20;
+            if (totalParticipantsForRace === 0) {
+                history.push({ raceRound: race.round, price: currentPrice });
+                continue;
             }
+
+            const selectionCount = participantsWithTeamsForRace.filter(p => {
+                const teamForRace = getTeamForRace(p.id, race.id, teamSnapshots);
+                return teamForRace.includes(rider.id);
+            }).length;
+
+            const popularityPercent = (selectionCount / totalParticipantsForRace) * 100;
+
+            let priceChange = 0;
+            if (popularityPercent > 75) {
+                priceChange = 30;
+            } else if (popularityPercent > 50) {
+                priceChange = 20;
+            } else if (popularityPercent > 25) {
+                priceChange = 10;
+            }
+            // Price decreases are not simulated as they depend on the entire market's state (zero-sum logic).
             
-            currentPrice = newPrice;
+            let newPrice = currentPrice + priceChange;
+            currentPrice = Math.max(0, newPrice); // Prevent negative prices
+
             history.push({ raceRound: race.round, price: currentPrice });
         }
         
         return history;
-    }, [rider, races, participants, teamSnapshots, sport]);
+    }, [rider, races, participants, teamSnapshots]);
 
     return (
         <div className="animate-fadeIn max-w-4xl mx-auto">
