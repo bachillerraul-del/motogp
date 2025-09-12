@@ -5,14 +5,13 @@ import { Toast } from './components/Toast';
 import { Modal } from './components/Modal';
 import { supabase } from './lib/supabaseClient';
 import { useFantasyData } from './hooks/useFantasyData';
-import { getTeamForRace } from './lib/utils';
-import type { Rider, Participant, TeamSnapshot, Race, Sport, Constructor } from './types';
+import type { Rider, Participant, Race, Sport, Constructor, View } from './types';
 import { MOTOGP_BUDGET, MOTOGP_RIDER_LIMIT, F1_BUDGET, F1_RIDER_LIMIT, CONSTRUCTOR_LIMIT } from './constants';
 import { MotoIcon, F1Icon } from './components/Icons';
 import { BottomNav } from './components/BottomNav';
+import { FantasyDataProvider, useFantasy } from './contexts/FantasyDataContext';
+import { processPriceAdjustments } from './services/leagueService';
 
-
-type View = 'home' | 'builder' | 'results' | 'rules' | 'riderDetail' | 'constructorDetail';
 
 const Home = lazy(() => import('./components/Home').then(module => ({ default: module.Home })));
 const TeamBuilder = lazy(() => import('./components/TeamBuilder').then(module => ({ default: module.TeamBuilder })));
@@ -60,14 +59,12 @@ const LoadingSpinner: React.FC<{ message: string, sport: Sport | null }> = ({ me
     </div>
 );
 
-const App: React.FC = () => {
-    const [sport, setSport] = useState<Sport | null>(null);
+const MainApp: React.FC<{ sport: Sport; setSport: (sport: Sport | null) => void }> = ({ sport, setSport }) => {
     const [view, setView] = useState<View>('home');
     const [previousView, setPreviousView] = useState<View>('home');
     const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
     const [selectedConstructor, setSelectedConstructor] = useState<Constructor | null>(null);
-    
-    // Auth State
+
     const [session, setSession] = useState<Session | null>(null);
     const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
     const [loginEmail, setLoginEmail] = useState('');
@@ -75,16 +72,14 @@ const App: React.FC = () => {
     const [loginError, setLoginError] = useState<string | null>(null);
     const isAdmin = !!session;
 
-    // Participant State
     const [currentUser, setCurrentUser] = useState<Participant | null>(null);
     const [isNewUserFlow, setIsNewUserFlow] = useState(false);
     const [newUserName, setNewUserName] = useState<string | null>(null);
-
+    
     const {
-        participants, races, teamSnapshots, riders, constructors, allRiderPoints, loading, toast, setToast,
-        showToast, fetchData, addParticipantToLeague, handleUpdateParticipantTeam, handleUpdateParticipant,
-        handleDeleteParticipant, handleUpdateRace, handleUpdateRider, handleBulkUpdatePoints
-    } = useFantasyData(sport);
+        participants, races, teamSnapshots, riders, constructors, loading, toast, setToast,
+        showToast, fetchData, addParticipantToLeague, handleUpdateParticipantTeam
+    } = useFantasy();
 
     const constants = useMemo(() => {
         if (sport === 'f1') {
@@ -105,38 +100,58 @@ const App: React.FC = () => {
         };
     }, [sport]);
     
-    // Theme Management
     useEffect(() => {
         document.body.className = 'bg-gray-900';
-        if (sport) {
-            document.body.classList.add(`sport-${sport}`);
-        }
+        document.body.classList.add(`sport-${sport}`);
     }, [sport]);
 
-
-    // Auth Management
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-        });
+        supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
-            if (_event === 'SIGNED_IN') {
-                setIsLoginModalOpen(false);
-            }
+            if (_event === 'SIGNED_IN') setIsLoginModalOpen(false);
         });
         return () => subscription.unsubscribe();
     }, []);
 
+    useEffect(() => {
+        const runPriceAdjustments = async () => {
+            if (isAdmin && !loading && sport && races.length > 0 && riders.length > 0) {
+                const adjustmentData = processPriceAdjustments(races, riders, participants, teamSnapshots);
+                if (adjustmentData && (adjustmentData.ridersToUpdate.length > 0 || adjustmentData.raceIdsToUpdate.length > 0)) {
+                    showToast(`Detectadas ${adjustmentData.raceIdsToUpdate.length} jornadas pasadas. Ajustando precios...`, 'info');
+
+                    let didUpdate = false;
+                    if (adjustmentData.ridersToUpdate.length > 0) {
+                        didUpdate = true;
+                        const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
+                        const { error } = await supabase.from(riderTable).upsert(adjustmentData.ridersToUpdate);
+                        if (error) { showToast('Error crítico al actualizar precios de pilotos.', 'error'); console.error(error); return; }
+                    }
+                    
+                    if (adjustmentData.raceIdsToUpdate.length > 0) {
+                        const raceTable = sport === 'f1' ? 'f1_races' : 'races';
+                        const { error: raceUpdateError } = await supabase.from(raceTable).update({ prices_adjusted: true }).in('id', adjustmentData.raceIdsToUpdate);
+                        if (raceUpdateError) { showToast('Error al marcar jornadas como procesadas.', 'error'); console.error(raceUpdateError); return; }
+                    }
+                    
+                    if (didUpdate) {
+                        showToast('Precios de pilotos actualizados. Recargando datos...', 'success');
+                        await fetchData();
+                    } else if (adjustmentData.raceIdsToUpdate.length > 0) {
+                        await fetchData();
+                    }
+                }
+            }
+        };
+        runPriceAdjustments();
+    }, [isAdmin, loading, sport, races, riders, participants, teamSnapshots, showToast, fetchData]);
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoginError(null);
-        const { error } = await supabase.auth.signInWithPassword({
-            email: loginEmail,
-            password: loginPassword,
-        });
+        const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
         if (error) {
-            console.error("Login Error:", error.message);
             setLoginError('Email o contraseña inválidos.');
         } else {
             showToast('Login correcto. Modo administrador activado.', 'success');
@@ -159,9 +174,6 @@ const App: React.FC = () => {
 
     const handleUserLogout = () => {
         setCurrentUser(null);
-        setIsNewUserFlow(false);
-        setNewUserName(null);
-        showToast('Has cerrado sesión.', 'success');
     };
 
     const handleGoToBuilderForNew = (name: string) => {
@@ -169,178 +181,12 @@ const App: React.FC = () => {
         setIsNewUserFlow(true);
         setView('builder');
     };
-    
-    useEffect(() => {
-        if (isAdmin && !loading && sport && races.length > 0 && riders.length > 0 && constructors.length > 0) {
-            const processPriceAdjustments = async () => {
-                const now = new Date();
-                const unprocessedPastRaces = races
-                    .filter(r => r.race_date && new Date(r.race_date) < now && !r.prices_adjusted)
-                    .sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
-
-                if (unprocessedPastRaces.length === 0) return;
-
-                showToast(`Detectadas ${unprocessedPastRaces.length} jornadas pasadas. Ajustando precios...`, 'info');
-
-                const currentRiderPrices = new Map<number, number>();
-                riders.forEach(r => currentRiderPrices.set(r.id, r.price));
-
-                const currentConstructorPrices = new Map<number, number>();
-                constructors.forEach(c => currentConstructorPrices.set(c.id, c.price));
-                
-                for (const race of unprocessedPastRaces) {
-                    const riderSelectionCounts = new Map<number, number>();
-                    const constructorSelectionCounts = new Map<number, number>();
-                    
-                    const participantsWithTeamsForRace = participants.filter(p => {
-                        const { riderIds, constructorId } = getTeamForRace(p.id, race.id, teamSnapshots);
-                        return riderIds.length > 0 && constructorId !== null;
-                    });
-                    
-                    if (participantsWithTeamsForRace.length === 0) continue;
-
-                    participantsWithTeamsForRace.forEach(p => {
-                        const { riderIds, constructorId } = getTeamForRace(p.id, race.id, teamSnapshots);
-                        riderIds.forEach(riderId => {
-                            riderSelectionCounts.set(riderId, (riderSelectionCounts.get(riderId) || 0) + 1);
-                        });
-                        if (constructorId) {
-                            constructorSelectionCounts.set(constructorId, (constructorSelectionCounts.get(constructorId) || 0) + 1);
-                        }
-                    });
-                    
-                    const totalParticipantsForRace = participantsWithTeamsForRace.length;
-                    
-                    // --- Rider Price Changes ---
-                    const riderPriceChanges = new Map<number, number>();
-                    const dominantRiders: number[] = [], veryPopularRiders: number[] = [], popularRiders: number[] = [], differentialRiders: number[] = [], unpopularRiders: number[] = [];
-
-                    riders.forEach(rider => {
-                        const selectionCount = riderSelectionCounts.get(rider.id) || 0;
-                        const popularityPercent = totalParticipantsForRace > 0 ? (selectionCount / totalParticipantsForRace) * 100 : 0;
-
-                        if (popularityPercent > 75) dominantRiders.push(rider.id);
-                        else if (popularityPercent > 50) veryPopularRiders.push(rider.id);
-                        else if (popularityPercent > 25) popularRiders.push(rider.id);
-                        else if (popularityPercent > 0) { if (!rider.condition) differentialRiders.push(rider.id); }
-                        else { if (!rider.condition) unpopularRiders.push(rider.id); }
-                    });
-
-                    let totalRiderIncrease = 0;
-                    dominantRiders.forEach(id => { riderPriceChanges.set(id, 30); totalRiderIncrease += 30; });
-                    veryPopularRiders.forEach(id => { riderPriceChanges.set(id, 20); totalRiderIncrease += 20; });
-                    popularRiders.forEach(id => { riderPriceChanges.set(id, 10); totalRiderIncrease += 10; });
-
-                    let riderDecreaseCandidates = unpopularRiders.length > 0 ? unpopularRiders : differentialRiders;
-                    if (riderDecreaseCandidates.length > 0) {
-                        riderDecreaseCandidates.sort((a, b) => (currentRiderPrices.get(b) || 0) - (currentRiderPrices.get(a) || 0));
-                        let decreaseToDistribute = totalRiderIncrease;
-                        let candidateIndex = 0;
-                        while (decreaseToDistribute >= 10) {
-                            const riderId = riderDecreaseCandidates[candidateIndex];
-                            const currentChange = riderPriceChanges.get(riderId) || 0;
-                            riderPriceChanges.set(riderId, currentChange - 10);
-                            decreaseToDistribute -= 10;
-                            candidateIndex = (candidateIndex + 1) % riderDecreaseCandidates.length;
-                        }
-                    }
-
-                    riderPriceChanges.forEach((change, riderId) => {
-                        const currentPrice = currentRiderPrices.get(riderId) || 0;
-                        currentRiderPrices.set(riderId, Math.max(0, currentPrice + change));
-                    });
-
-                    // --- Constructor Price Changes ---
-                    const constructorPriceChanges = new Map<number, number>();
-                    const dominantConstructors: number[] = [], veryPopularConstructors: number[] = [], popularConstructors: number[] = [], unpopularConstructors: number[] = [];
-
-                    constructors.forEach(constructor => {
-                        const selectionCount = constructorSelectionCounts.get(constructor.id) || 0;
-                        const popularityPercent = totalParticipantsForRace > 0 ? (selectionCount / totalParticipantsForRace) * 100 : 0;
-
-                        if (popularityPercent > 75) dominantConstructors.push(constructor.id);
-                        else if (popularityPercent > 50) veryPopularConstructors.push(constructor.id);
-                        else if (popularityPercent > 25) popularConstructors.push(constructor.id);
-                        else if (popularityPercent === 0) unpopularConstructors.push(constructor.id);
-                    });
-
-                    let totalConstructorIncrease = 0;
-                    dominantConstructors.forEach(id => { constructorPriceChanges.set(id, 30); totalConstructorIncrease += 30; });
-                    veryPopularConstructors.forEach(id => { constructorPriceChanges.set(id, 20); totalConstructorIncrease += 20; });
-                    popularConstructors.forEach(id => { constructorPriceChanges.set(id, 10); totalConstructorIncrease += 10; });
-                    
-                    let constructorDecreaseCandidates = unpopularConstructors;
-                    if (constructorDecreaseCandidates.length > 0) {
-                        constructorDecreaseCandidates.sort((a, b) => (currentConstructorPrices.get(b) || 0) - (currentConstructorPrices.get(a) || 0));
-                        let decreaseToDistribute = totalConstructorIncrease;
-                        let candidateIndex = 0;
-                        while (decreaseToDistribute >= 10) {
-                            const constructorId = constructorDecreaseCandidates[candidateIndex];
-                            const currentChange = constructorPriceChanges.get(constructorId) || 0;
-                            constructorPriceChanges.set(constructorId, currentChange - 10);
-                            decreaseToDistribute -= 10;
-                            candidateIndex = (candidateIndex + 1) % constructorDecreaseCandidates.length;
-                        }
-                    }
-
-                    constructorPriceChanges.forEach((change, constructorId) => {
-                        const currentPrice = currentConstructorPrices.get(constructorId) || 0;
-                        currentConstructorPrices.set(constructorId, Math.max(0, currentPrice + change));
-                    });
-                }
-
-                const ridersMap = new Map(riders.map(r => [r.id, r]));
-                const ridersToUpdate = Array.from(currentRiderPrices.entries()).map(([id, newPrice]) => {
-                    const originalRider = ridersMap.get(id);
-                    if (!originalRider) return null;
-                    const { id: riderId, ...rest } = originalRider;
-                    return { ...rest, id: riderId, price: newPrice, condition: originalRider.condition ?? null };
-                }).filter((r): r is NonNullable<typeof r> => r !== null && r.price !== ridersMap.get(r.id)?.price);
-                
-                const constructorsMap = new Map(constructors.map(c => [c.id, c]));
-                const constructorsToUpdate = Array.from(currentConstructorPrices.entries()).map(([id, newPrice]) => {
-                    const original = constructorsMap.get(id);
-                    if (!original) return null;
-                    return { ...original, price: newPrice };
-                }).filter((c): c is NonNullable<typeof c> => c !== null && c.price !== constructorsMap.get(c.id)?.price);
-
-                let didUpdate = false;
-                if (ridersToUpdate.length > 0) {
-                    didUpdate = true;
-                    const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
-                    const { error } = await supabase.from(riderTable).upsert(ridersToUpdate);
-                    if (error) { showToast('Error crítico al actualizar precios de pilotos.', 'error'); console.error(error); return; }
-                }
-                
-                if (constructorsToUpdate.length > 0) {
-                    didUpdate = true;
-                    const constructorTable = sport === 'f1' ? 'f1_constructors' : 'teams';
-                    const { error } = await supabase.from(constructorTable).upsert(constructorsToUpdate);
-                    if (error) { showToast('Error crítico al actualizar precios de escuderías.', 'error'); console.error(error); return; }
-                }
-
-                const raceIdsToUpdate = unprocessedPastRaces.map(r => r.id);
-                const raceTable = sport === 'f1' ? 'f1_races' : 'races';
-                const { error: raceUpdateError } = await supabase.from(raceTable).update({ prices_adjusted: true }).in('id', raceIdsToUpdate);
-
-                if (raceUpdateError) { showToast('Error al marcar jornadas como procesadas.', 'error'); console.error(raceUpdateError); return; }
-                
-                if (didUpdate) {
-                    showToast('Precios de pilotos y escuderías actualizados. Recargando datos...', 'success');
-                    await fetchData();
-                }
-            };
-            processPriceAdjustments();
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAdmin, loading, races, riders, constructors, participants, teamSnapshots, sport]);
 
     const currentRace = useMemo(() => {
         const now = new Date();
-        const futureRaces = races
+        return races
             .filter(r => r.race_date && new Date(r.race_date) > now)
-            .sort((a, b) => new Date(a.race_date!).getTime() - new Date(b.race_date!).getTime());
-        return futureRaces.length > 0 ? futureRaces[0] : null;
+            .sort((a, b) => new Date(a.race_date!).getTime() - new Date(b.race_date!).getTime())[0] || null;
     }, [races]);
 
     const handleSwitchSport = () => {
@@ -366,14 +212,6 @@ const App: React.FC = () => {
         setSelectedConstructor(null);
     }, [previousView]);
 
-    if (!sport) {
-        return <SportSelector onSelect={setSport} />;
-    }
-
-    if (loading) {
-        return <LoadingSpinner message="Cargando datos de la liga..." sport={sport} />;
-    }
-
     const addParticipantAndSwitchView = async (name: string, team: Rider[], constructor: Constructor, raceId: number): Promise<boolean> => {
         const newParticipant = await addParticipantToLeague(name, team, constructor, raceId);
         if (newParticipant) {
@@ -384,9 +222,12 @@ const App: React.FC = () => {
         return false;
     };
 
+    if (loading) {
+        return <LoadingSpinner message="Cargando datos de la liga..." sport={sport} />;
+    }
 
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
+         <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
             <Toast toast={toast} onClose={() => setToast(null)} />
 
             {!currentUser && !isNewUserFlow ? (
@@ -415,28 +256,16 @@ const App: React.FC = () => {
                         <Suspense fallback={<LoadingSpinner message={`Cargando ${view}...`} sport={sport} />}>
                             {view === 'home' && (
                                 <Home 
-                                    races={races}
-                                    currentRace={currentRace}
                                     onGoToBuilder={() => setView('builder')}
                                     sport={sport}
                                     currentUser={currentUser}
-                                    participants={participants}
-                                    teamSnapshots={teamSnapshots}
-                                    riders={riders}
-                                    constructors={constructors}
-                                    allRiderPoints={allRiderPoints}
+                                    currentRace={currentRace}
                                 />
                             )}
                             {view === 'builder' && (
                                 <TeamBuilder 
-                                    races={races}
-                                    riders={riders}
-                                    constructors={constructors}
-                                    participants={participants}
-                                    teamSnapshots={teamSnapshots}
                                     onAddToLeague={addParticipantAndSwitchView}
                                     onUpdateTeam={handleUpdateParticipantTeam}
-                                    showToast={showToast}
                                     currentRace={currentRace}
                                     currentUser={currentUser}
                                     newUserName={newUserName}
@@ -447,25 +276,11 @@ const App: React.FC = () => {
                                     currencySuffix={constants.CURRENCY_SUFFIX}
                                     sport={sport}
                                     onSelectRider={handleSelectRider}
-                                    onSelectConstructor={handleSelectConstructor}
                                 />
                             )}
                             {view === 'results' && (
                                 <Results 
-                                    participants={participants}
-                                    races={races}
-                                    teamSnapshots={teamSnapshots}
-                                    riders={riders}
-                                    constructors={constructors}
                                     isAdmin={isAdmin}
-                                    onUpdateParticipant={handleUpdateParticipant}
-                                    onDeleteParticipant={handleDeleteParticipant}
-                                    onUpdateRace={handleUpdateRace}
-                                    onUpdateRider={handleUpdateRider}
-                                    handleBulkUpdatePoints={handleBulkUpdatePoints}
-                                    showToast={showToast}
-                                    allRiderPoints={allRiderPoints}
-                                    refetchData={fetchData}
                                     sport={sport}
                                     RIDER_LIMIT={constants.RIDER_LIMIT}
                                     CONSTRUCTOR_LIMIT={constants.CONSTRUCTOR_LIMIT}
@@ -475,16 +290,10 @@ const App: React.FC = () => {
                                     onSelectRider={handleSelectRider}
                                 />
                             )}
-                            {view === 'rules' && (
-                                <Rules sport={sport}/>
-                            )}
+                            {view === 'rules' && <Rules sport={sport}/>}
                             {view === 'riderDetail' && selectedRider && (
                                 <RiderDetail
                                     rider={selectedRider}
-                                    races={races}
-                                    allRiderPoints={allRiderPoints}
-                                    participants={participants}
-                                    teamSnapshots={teamSnapshots}
                                     sport={sport}
                                     onBack={handleBack}
                                     currencyPrefix={constants.CURRENCY_PREFIX}
@@ -493,12 +302,7 @@ const App: React.FC = () => {
                             )}
                              {view === 'constructorDetail' && selectedConstructor && (
                                 <ConstructorDetail
-                                    constructor={selectedConstructor}
-                                    races={races}
-                                    allRiderPoints={allRiderPoints}
-                                    participants={participants}
-                                    teamSnapshots={teamSnapshots}
-                                    riders={riders}
+                                    constructorItem={selectedConstructor}
                                     sport={sport}
                                     onBack={handleBack}
                                     currencyPrefix={constants.CURRENCY_PREFIX}
@@ -507,12 +311,7 @@ const App: React.FC = () => {
                             )}
                         </Suspense>
                     </main>
-
-                    <BottomNav
-                        currentView={view}
-                        setView={setView}
-                        sport={sport}
-                    />
+                    <BottomNav currentView={view} setView={setView} sport={sport} />
                 </>
             )}
 
@@ -533,6 +332,20 @@ const App: React.FC = () => {
                 </form>
             </Modal>
         </div>
+    );
+}
+
+const App: React.FC = () => {
+    const [sport, setSport] = useState<Sport | null>(null);
+
+    if (!sport) {
+        return <SportSelector onSelect={setSport} />;
+    }
+
+    return (
+        <FantasyDataProvider sport={sport}>
+            <MainApp sport={sport} setSport={setSport} />
+        </FantasyDataProvider>
     );
 };
 

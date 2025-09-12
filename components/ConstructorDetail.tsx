@@ -1,16 +1,11 @@
 import React, { useMemo } from 'react';
 import type { Constructor, Race, Participant, TeamSnapshot, AllRiderPoints, Sport, Rider } from '../types';
-import { getLatestTeam, getTeamForRace } from '../lib/utils';
+import { getLatestTeam } from '../lib/utils';
 import { ChevronLeftIcon, TrophyIcon, ArrowUpIcon, ArrowDownIcon, UsersIcon, ChartBarIcon } from './Icons';
-import { PriceChart } from './PriceChart';
+import { useFantasy } from '../contexts/FantasyDataContext';
 
 interface ConstructorDetailProps {
-    constructor: Constructor;
-    races: Race[];
-    allRiderPoints: AllRiderPoints;
-    participants: Participant[];
-    teamSnapshots: TeamSnapshot[];
-    riders: Rider[];
+    constructorItem: Constructor;
     sport: Sport;
     onBack: () => void;
     currencyPrefix: string;
@@ -30,7 +25,8 @@ const StatCard: React.FC<{ title: string; value: React.ReactNode; icon: React.Re
 );
 
 export const ConstructorDetail: React.FC<ConstructorDetailProps> = (props) => {
-    const { constructor, races, allRiderPoints, participants, teamSnapshots, riders, sport, onBack, currencyPrefix, currencySuffix } = props;
+    const { constructorItem, sport, onBack, currencyPrefix, currencySuffix } = props;
+    const { races, allRiderPoints, participants, teamSnapshots, riders } = useFantasy();
 
     const theme = {
         primaryColor: sport === 'f1' ? 'text-red-500' : 'text-orange-500',
@@ -43,8 +39,13 @@ export const ConstructorDetail: React.FC<ConstructorDetailProps> = (props) => {
     };
 
     const constructorRiderIds = useMemo(() => {
-        return new Set(riders.filter(r => r.constructor_id === constructor.id).map(r => r.id));
-    }, [riders, constructor.id]);
+        return new Set(riders.filter(r => {
+            if (r.constructor_id) {
+                return r.constructor_id === constructorItem.id;
+            }
+            return r.team === constructorItem.name;
+        }).map(r => r.id));
+    }, [riders, constructorItem]);
 
     const calculateConstructorScoreForRace = (racePoints: Record<number, number>): number => {
         const constructorRiderPointsForRace = Object.entries(racePoints)
@@ -66,14 +67,14 @@ export const ConstructorDetail: React.FC<ConstructorDetailProps> = (props) => {
 
         const selectionCount = participants.filter(p => {
             const { constructorId } = getLatestTeam(p.id, races, teamSnapshots);
-            return constructorId === constructor.id;
+            return constructorId === constructorItem.id;
         }).length;
 
         const selectionPercentage = participants.length > 0 ? (selectionCount / participants.length) * 100 : 0;
-        const priceChange = constructor.price - constructor.initial_price;
+        const priceChange = constructorItem.price - constructorItem.initial_price;
 
         return { totalPoints: Math.round(totalPoints), selectionPercentage, priceChange };
-    }, [constructor, allRiderPoints, participants, teamSnapshots, races, calculateConstructorScoreForRace]);
+    }, [constructorItem, allRiderPoints, participants, teamSnapshots, races, calculateConstructorScoreForRace]);
 
     const pointsByRace = useMemo(() => {
         return [...races]
@@ -84,51 +85,10 @@ export const ConstructorDetail: React.FC<ConstructorDetailProps> = (props) => {
             .filter(item => item.points > 0)
             .sort((a, b) => b.points - a.points);
     }, [races, allRiderPoints, calculateConstructorScoreForRace]);
-
-    const priceHistory = useMemo(() => {
-        const history = [{ raceRound: 0, price: constructor.initial_price }];
-        // This is a simplified simulation based on popularity and doesn't account for market balancing.
-        // It provides a general trend for the user.
-        const sortedAdjustedRaces = [...races]
-            .filter(r => new Date(r.race_date) < new Date() && r.prices_adjusted)
-            .sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
-
-        for (const race of sortedAdjustedRaces) {
-            const participantsWithTeamsForRace = participants.filter(p => {
-                const team = getTeamForRace(p.id, race.id, teamSnapshots);
-                return team.riderIds.length > 0 && !!team.constructorId;
-            });
-            const totalParticipantsForRace = participantsWithTeamsForRace.length;
-            if (totalParticipantsForRace === 0) continue;
-
-            const selectionCount = participantsWithTeamsForRace.filter(p => {
-                const { constructorId } = getTeamForRace(p.id, race.id, teamSnapshots);
-                return constructorId === constructor.id;
-            }).length;
-
-            const popularityPercent = (selectionCount / totalParticipantsForRace) * 100;
-
-            let priceChange = 0;
-            if (popularityPercent > 75) priceChange = 30;
-            else if (popularityPercent > 50) priceChange = 20;
-            else if (popularityPercent > 25) priceChange = 10;
-            // Note: Decrease logic is handled globally, so we only simulate increases here for the chart.
-            const newPrice = history[history.length - 1].price + priceChange;
-            history.push({ raceRound: race.round, price: newPrice });
-        }
-
-        // Ensure the current price is the last point
-        if (history[history.length - 1].price !== constructor.price && sortedAdjustedRaces.length > 0) {
-             history[history.length - 1].price = constructor.price;
-        }
-
-
-        return history;
-    }, [constructor, races, participants, teamSnapshots]);
     
     const constructorRidersList = useMemo(() => 
-        riders.filter(r => r.constructor_id === constructor.id)
-    , [riders, constructor.id]);
+        riders.filter(r => constructorRiderIds.has(r.id))
+    , [riders, constructorRiderIds]);
 
     return (
         <div className="animate-fadeIn max-w-4xl mx-auto">
@@ -140,12 +100,12 @@ export const ConstructorDetail: React.FC<ConstructorDetailProps> = (props) => {
             <header className="bg-gray-800 rounded-lg shadow-lg p-6 mb-8">
                 <div className="flex flex-col sm:flex-row gap-6 items-center">
                     <div className="flex-grow text-center sm:text-left">
-                        <h1 className="text-4xl font-bold text-white">{constructor.name}</h1>
+                        <h1 className="text-4xl font-bold text-white">{constructorItem.name}</h1>
                         <p className={`text-lg font-semibold ${theme.primaryColor}`}>Escudería / Constructor</p>
                     </div>
                     <div className="bg-gray-900/50 p-4 rounded-lg text-center">
                         <p className="text-sm text-gray-400 uppercase">Precio Actual</p>
-                        <p className="text-4xl font-bold text-white">{formatPrice(constructor.price)}</p>
+                        <p className="text-4xl font-bold text-white">{formatPrice(constructorItem.price)}</p>
                     </div>
                 </div>
             </header>
@@ -167,11 +127,6 @@ export const ConstructorDetail: React.FC<ConstructorDetailProps> = (props) => {
                     }
                     icon={<ChartBarIcon className="w-8 h-8"/>}
                 />
-            </div>
-            
-            <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-8">
-                 <h2 className="text-2xl font-bold text-white mb-4">Evolución del Precio</h2>
-                 <PriceChart data={priceHistory} sport={sport} currencyPrefix={currencyPrefix} currencySuffix={currencySuffix} />
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

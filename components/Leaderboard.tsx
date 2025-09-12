@@ -231,8 +231,16 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
                                                         const riderScore = riderIds.reduce((acc, rId) => acc + (racePointsMap[rId] || 0), 0);
                                                         let constructorScore = 0;
                                                         if (constructorId) {
-                                                            const cPoints = riders.filter(r => r.constructor_id === constructorId).map(r => racePointsMap[r.id] || 0).sort((a,b)=>b-a);
-                                                            constructorScore = (cPoints[0] || 0 + (cPoints[1] || 0)) / 2;
+                                                            const constructor = constructorsById.get(constructorId);
+                                                            if (constructor) {
+                                                                const cPoints = riders.filter(r => {
+                                                                    if (r.constructor_id) {
+                                                                        return r.constructor_id === constructorId;
+                                                                    }
+                                                                    return r.team === constructor.name;
+                                                                }).map(r => racePointsMap[r.id] || 0).sort((a,b)=>b-a);
+                                                                constructorScore = ((cPoints[0] || 0) + (cPoints[1] || 0)) / 2;
+                                                            }
                                                         }
                                                         return (
                                                             <li key={race.id} className="flex justify-between items-baseline">

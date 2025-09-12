@@ -26,7 +26,7 @@ export const useFantasyData = (sport: Sport | null) => {
             const participantTable = 'participants';
             const raceTable = sport === 'f1' ? 'f1_races' : 'races';
             const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
-            const constructorTable = sport === 'f1' ? 'f1_constructors' : 'teams'; // FIX: Use 'teams' for MotoGP constructors
+            const constructorTable = sport === 'f1' ? 'f1_constructors' : 'teams';
             const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
             const pointsTable = sport === 'f1' ? 'f1_rider_points' : 'rider_points';
 
@@ -57,7 +57,37 @@ export const useFantasyData = (sport: Sport | null) => {
             setRaces(racesData || []);
             setTeamSnapshots(snapshotsData || []);
             setRiders(ridersData || []);
-            setConstructors(constructorsData || []);
+            
+            const processedConstructors = (constructorsData || []).map(constructor => {
+                const constructorRiders = (ridersData || []).filter(rider => {
+                    if (rider.constructor_id) {
+                        return rider.constructor_id === constructor.id;
+                    }
+                    // Fallback to match by name for data consistency
+                    return rider.team === constructor.name;
+                });
+            
+                if (constructorRiders.length > 0) {
+                    // Calculate current price
+                    const sortedByPrice = [...constructorRiders].sort((a, b) => b.price - a.price);
+                    const topTwoPrices = sortedByPrice.slice(0, 2).map(r => r.price);
+                    const newPrice = topTwoPrices.reduce((a, b) => a + b, 0) / topTwoPrices.length;
+            
+                    // Calculate initial price
+                    const sortedByInitialPrice = [...constructorRiders].sort((a, b) => b.initial_price - a.initial_price);
+                    const topTwoInitialPrices = sortedByInitialPrice.slice(0, 2).map(r => r.initial_price);
+                    const newInitialPrice = topTwoInitialPrices.reduce((a, b) => a + b, 0) / topTwoInitialPrices.length;
+                    
+                    return {
+                        ...constructor,
+                        price: Math.round(newPrice),
+                        initial_price: Math.round(newInitialPrice)
+                    };
+                }
+                return constructor;
+            });
+
+            setConstructors(processedConstructors);
             
             const pointsMap: AllRiderPoints = {};
             (pointsData || []).forEach(p => {

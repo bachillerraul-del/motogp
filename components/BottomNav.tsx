@@ -1,10 +1,12 @@
 import React from 'react';
-import type { Sport } from '../types';
+import type { Sport, View } from '../types';
 import { HomeIcon, PlusCircleIcon, TrophyIcon, BookOpenIcon } from './Icons';
 
+type NavView = Extract<View, 'home' | 'builder' | 'results' | 'rules'>;
+
 interface BottomNavProps {
-    currentView: 'home' | 'builder' | 'results' | 'rules' | 'riderDetail' | 'constructorDetail';
-    setView: (view: 'home' | 'builder' | 'results' | 'rules') => void;
+    currentView: View;
+    setView: (view: NavView) => void;
     sport: Sport;
 }
 

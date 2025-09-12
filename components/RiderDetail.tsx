@@ -1,16 +1,12 @@
-
 import React, { useMemo } from 'react';
-import type { Rider, Race, Participant, TeamSnapshot, AllRiderPoints, Sport } from '../types';
+import type { Rider, Race, Sport } from '../types';
 import { getLatestTeam, getTeamForRace } from '../lib/utils';
 import { ChevronLeftIcon, TrophyIcon, ArrowUpIcon, ArrowDownIcon, UsersIcon, ChartBarIcon } from './Icons';
 import { PriceChart } from './PriceChart';
+import { useFantasy } from '../contexts/FantasyDataContext';
 
 interface RiderDetailProps {
     rider: Rider;
-    races: Race[];
-    allRiderPoints: AllRiderPoints;
-    participants: Participant[];
-    teamSnapshots: TeamSnapshot[];
     sport: Sport;
     onBack: () => void;
     currencyPrefix: string;
@@ -30,7 +26,8 @@ const StatCard: React.FC<{ title: string; value: React.ReactNode; icon: React.Re
 );
 
 export const RiderDetail: React.FC<RiderDetailProps> = (props) => {
-    const { rider, races, allRiderPoints, participants, teamSnapshots, sport, onBack, currencyPrefix, currencySuffix } = props;
+    const { rider, sport, onBack, currencyPrefix, currencySuffix } = props;
+    const { races, allRiderPoints, participants, teamSnapshots } = useFantasy();
 
     const theme = {
         primaryColor: sport === 'f1' ? 'text-red-500' : 'text-orange-500',

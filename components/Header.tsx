@@ -1,11 +1,9 @@
-
 import React from 'react';
 import { MotoIcon, LoginIcon, LogoutIcon, UserIcon, F1Icon } from './Icons';
-import type { Participant, Sport } from '../types';
+import type { Participant, Sport, View } from '../types';
 
 interface HeaderProps {
-    // FIX: Added 'constructorDetail' to the view types to match the possible views in App.tsx.
-    currentView: 'home' | 'builder' | 'results' | 'rules' | 'riderDetail' | 'constructorDetail';
+    currentView: View;
     isAdmin: boolean;
     onAdminLogin: () => void;
     onAdminLogout: () => void;
@@ -19,13 +17,12 @@ export const Header: React.FC<HeaderProps> = ({ currentView, isAdmin, onAdminLog
     
     const SportIcon = sport === 'f1' ? F1Icon : MotoIcon;
 
-    const viewTitles = {
+    const viewTitles: Record<View, string> = {
         home: 'Inicio',
         builder: 'Crear Equipo',
         results: 'Resultados',
         rules: 'Reglas del Juego',
         riderDetail: 'Detalles del Piloto',
-        // FIX: Added a title for the constructor detail view.
         constructorDetail: 'Detalles de Escudería'
     };
 

@@ -1,21 +1,16 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import type { Race, Sport, Participant, TeamSnapshot, Rider, AllRiderPoints, Constructor } from '../types';
+import type { Race, Sport, Participant, Constructor, Rider } from '../types';
 import { Countdown } from './Countdown';
-import { CalendarIcon, UserCircleIcon, ClipboardDocumentListIcon, TrophyIcon, ExclamationTriangleIcon } from './Icons';
+import { ClipboardDocumentListIcon, ExclamationTriangleIcon, UserCircleIcon } from './Icons';
 import { getLatestTeam, getTeamForRace } from '../lib/utils';
 import { MOTOGP_BUDGET, MOTOGP_RIDER_LIMIT, F1_BUDGET, F1_RIDER_LIMIT } from '../constants';
+import { useFantasy } from '../contexts/FantasyDataContext';
 
 interface HomeProps {
-    races: Race[];
     currentRace: Race | null;
     onGoToBuilder: () => void;
     sport: Sport;
     currentUser: Participant | null;
-    participants: Participant[];
-    teamSnapshots: TeamSnapshot[];
-    riders: Rider[];
-    constructors: Constructor[];
-    allRiderPoints: AllRiderPoints;
 }
 
 const formatDate = (dateString: string) => {
@@ -28,11 +23,8 @@ const formatDate = (dateString: string) => {
     });
 };
 
-export const Home: React.FC<HomeProps> = (props) => {
-    const { 
-        races, currentRace, onGoToBuilder, sport, currentUser,
-        participants, teamSnapshots, riders, constructors, allRiderPoints
-    } = props;
+export const Home: React.FC<HomeProps> = ({ currentRace, onGoToBuilder, sport, currentUser }) => {
+    const { participants, teamSnapshots, riders, constructors, allRiderPoints, races } = useFantasy();
 
     const deadlineDate = useMemo(() => currentRace?.race_date ? new Date(currentRace.race_date) : null, [currentRace]);
     const [timeRemaining, setTimeRemaining] = React.useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -113,12 +105,20 @@ export const Home: React.FC<HomeProps> = (props) => {
 
                 let constructorScore = 0;
                 if (constructorId) {
-                    const constructorRiderPoints = riders
-                        .filter(r => r.constructor_id === constructorId)
-                        .map(r => racePointsMap[r.id] || 0)
-                        .sort((a, b) => b - a);
-                    if(constructorRiderPoints.length > 0) {
-                        constructorScore = (constructorRiderPoints[0] + (constructorRiderPoints[1] || 0)) / 2;
+                    const constructor = constructors.find(c => c.id === constructorId);
+                    if (constructor) {
+                        const constructorRiderPoints = riders
+                            .filter(r => {
+                                if (r.constructor_id) {
+                                    return r.constructor_id === constructorId;
+                                }
+                                return r.team === constructor.name;
+                            })
+                            .map(r => racePointsMap[r.id] || 0)
+                            .sort((a, b) => b - a);
+                        if(constructorRiderPoints.length > 0) {
+                            constructorScore = (constructorRiderPoints[0] + (constructorRiderPoints[1] || 0)) / 2;
+                        }
                     }
                 }
 
@@ -130,7 +130,7 @@ export const Home: React.FC<HomeProps> = (props) => {
             return [...participants]
                 .map(p => ({ ...p, score: calculateTotalScore(p.id) }))
                 .sort((a, b) => b.score - a.score);
-        }, [participants, races, teamSnapshots, allRiderPoints, riders]);
+        }, [participants, races, teamSnapshots, allRiderPoints, riders, constructors]);
 
         const currentUserData = sortedParticipants.find(p => p.id === currentUser.id);
         const rank = currentUserData ? sortedParticipants.findIndex(p => p.id === currentUser.id) + 1 : null;

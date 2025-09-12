@@ -1,31 +1,18 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import type { Rider, Participant, Race, TeamSnapshot, AllRiderPoints, Sport, Constructor } from '../types';
+import type { Rider, Participant, Race, Sport, Constructor } from '../types';
 import { supabase } from '../lib/supabaseClient';
 import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
 import { Leaderboard } from './Leaderboard';
 import { RiderLeaderboard } from './RiderLeaderboard';
-import { TrophyIcon, CogIcon, UsersIcon, ChartBarIcon } from './Icons';
-import { getTeamForRace } from '../lib/utils';
+import { CogIcon, UsersIcon, ChartBarIcon } from './Icons';
+import { useFantasy } from '../contexts/FantasyDataContext';
+import { calculateScore } from '../lib/scoreUtils';
 
 type RiderWithScore = Rider & { score: number };
 
 interface ResultsProps {
-    participants: Participant[];
-    races: Race[];
-    teamSnapshots: TeamSnapshot[];
-    riders: Rider[];
-    constructors: Constructor[];
     isAdmin: boolean;
-    onUpdateParticipant: (participant: Participant) => Promise<void>;
-    onDeleteParticipant: (participantId: number) => Promise<void>;
-    onUpdateRace: (race: Race) => Promise<void>;
-    onUpdateRider: (rider: Rider) => Promise<void>;
-    handleBulkUpdatePoints: (roundId: number, newPoints: Map<number, number>, previousRiderIds: number[]) => Promise<void>;
-    // FIX: Added 'info' to the toast types to support informational messages.
-    showToast: (message: string, type: 'success' | 'error' | 'info') => void;
-    allRiderPoints: AllRiderPoints;
-    refetchData: () => void;
     sport: Sport;
     RIDER_LIMIT: number;
     CONSTRUCTOR_LIMIT: number;
@@ -37,12 +24,16 @@ interface ResultsProps {
 
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
-        participants, races, teamSnapshots, riders, isAdmin, 
-        handleBulkUpdatePoints,
-        showToast, allRiderPoints, refetchData, sport,
-        currentUser, onSelectRider
+        isAdmin, sport, currentUser, onSelectRider
     } = props;
     
+    // FIX: Renamed destructured functions to match what useFantasy hook provides (e.g., onUpdateParticipant -> handleUpdateParticipant).
+    const {
+        participants, races, teamSnapshots, riders, constructors, allRiderPoints,
+        handleBulkUpdatePoints, showToast, fetchData, handleUpdateParticipant, handleDeleteParticipant,
+        handleUpdateRace, handleUpdateRider
+    } = useFantasy();
+
     const [selectedRaceForEditing, setSelectedRaceForEditing] = useState<Race | null>(null);
     const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
     const defaultViewIsSet = useRef(false);
@@ -96,54 +87,29 @@ export const Results: React.FC<ResultsProps> = (props) => {
             showToast('Error al limpiar los puntos.', 'error');
         } else {
              showToast('Puntos limpiados para la jornada.', 'success');
-             refetchData();
+             fetchData();
         }
         setIsConfirmingClearPoints(false);
     };
 
     const confirmDeleteParticipant = () => {
         if (!participantToDelete) return;
-        props.onDeleteParticipant(participantToDelete.id);
+        // FIX: Renamed to match function from useFantasy hook.
+        handleDeleteParticipant(participantToDelete.id);
         setParticipantToDelete(null);
     };
 
-    const calculateScore = useCallback((participant: Participant): number => {
-        const calculateRaceScore = (race: Race) => {
-            const { riderIds, constructorId } = getTeamForRace(participant.id, race.id, teamSnapshots);
-            const racePointsMap = allRiderPoints[race.id] || {};
+    const scoreCalculator = useCallback((participant: Participant) => {
+        return calculateScore(participant, leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors);
+    }, [leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors]);
 
-            const riderScore = riderIds.reduce((acc, riderId) => acc + (racePointsMap[riderId] || 0), 0);
-
-            let constructorScore = 0;
-            if (constructorId) {
-                const constructorRiderPoints = riders
-                    .filter(r => r.constructor_id === constructorId)
-                    .map(r => racePointsMap[r.id] || 0)
-                    .sort((a, b) => b - a);
-
-                if (constructorRiderPoints.length > 0) {
-                    const top1 = constructorRiderPoints[0] || 0;
-                    const top2 = constructorRiderPoints[1] || 0;
-                    constructorScore = (top1 + top2) / 2;
-                }
-            }
-            
-            return riderScore + constructorScore;
-        };
-
-        if (leaderboardView === 'general') {
-            return races.reduce((totalScore, race) => totalScore + calculateRaceScore(race), 0);
-        }
-        const race = races.find(r => r.id === leaderboardView);
-        return race ? calculateRaceScore(race) : 0;
-    }, [leaderboardView, races, teamSnapshots, allRiderPoints, riders]);
 
     const sortedParticipants = useMemo(() => {
         return [...participants].map(p => ({
             ...p,
-            score: Math.round(calculateScore(p))
+            score: Math.round(scoreCalculator(p))
         })).sort((a, b) => b.score - a.score);
-    }, [participants, calculateScore]);
+    }, [participants, scoreCalculator]);
 
     const sortedRiders = useMemo(() => {
         const riderScores: Record<number, number> = {};
@@ -203,11 +169,21 @@ export const Results: React.FC<ResultsProps> = (props) => {
                 <div className="lg:flex lg:gap-8">
                     <div className={`w-full lg:flex-grow ${mobileView === 'leaderboard' ? 'block' : 'hidden'} lg:block`}>
                         <Leaderboard
-                            {...props}
                             participants={sortedParticipants}
+                            races={races}
                             leaderboardView={leaderboardView}
                             onLeaderboardViewChange={setLeaderboardView}
+                            isAdmin={isAdmin}
                             onDeleteParticipant={setParticipantToDelete}
+                            // FIX: Renamed to match function from useFantasy hook.
+                            onUpdateParticipant={handleUpdateParticipant}
+                            allRiderPoints={allRiderPoints}
+                            teamSnapshots={teamSnapshots}
+                            riders={riders}
+                            constructors={constructors}
+                            sport={sport}
+                            currencyPrefix={props.currencyPrefix}
+                            currencySuffix={props.currencySuffix}
                             onSelectRider={onSelectRider}
                         />
                     </div>
@@ -247,13 +223,18 @@ export const Results: React.FC<ResultsProps> = (props) => {
             <Modal isOpen={isAdminPanelOpen} onClose={() => setIsAdminPanelOpen(false)} title="Panel de Administrador" sport={sport}>
                 <div className="max-h-[75vh] overflow-y-auto pr-2 -mr-4">
                     <AdminPanel
-                        {...props}
+                        races={races}
+                        riders={riders}
                         riderPoints={allRiderPoints}
+                        sport={sport}
                         selectedRace={selectedRaceForEditing}
                         onSelectRace={setSelectedRaceForEditing}
                         onClearPoints={() => { setIsConfirmingClearPoints(true); setIsAdminPanelOpen(false); }}
-                        // FIX: Removed onPointChange prop as it was unused and causing a type error.
+                        // FIX: Renamed to match functions from useFantasy hook.
+                        onUpdateRace={handleUpdateRace}
+                        onUpdateRider={handleUpdateRider}
                         onBulkUpdatePoints={handleBulkUpdatePoints}
+                        showToast={showToast}
                     />
                 </div>
             </Modal>
