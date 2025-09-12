@@ -6,7 +6,7 @@ interface RiderCardProps {
     rider: Rider;
     onAdd: (rider: Rider) => void;
     onSelect: (rider: Rider) => void;
-    isTeamFull: boolean;
+    isRiderTeamFull: boolean;
     isAffordable: boolean;
     isInTeam: boolean;
     selectedByTeams: string[];
@@ -16,7 +16,7 @@ interface RiderCardProps {
     sport: Sport;
 }
 
-export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, isTeamFull, isAffordable, isInTeam, selectedByTeams, priceChange, currencyPrefix, currencySuffix, sport }) => {
+export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, isRiderTeamFull, isAffordable, isInTeam, selectedByTeams, priceChange, currencyPrefix, currencySuffix, sport }) => {
     const isSelectable = !rider.condition?.includes('unavailable') && !rider.condition?.includes('injured');
 
     const formatPrice = (price: number): string => {
@@ -27,7 +27,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
     const getButtonText = () => {
         if (isInTeam) return 'En tu Equipo';
         if (!isSelectable) return 'No Disponible';
-        if (isTeamFull) return 'Equipo Lleno';
+        if (isRiderTeamFull) return 'Equipo Lleno';
         if (!isAffordable) return 'Excede Presupuesto';
         return 'Añadir al Equipo';
     };
@@ -87,7 +87,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
             </div>
             <button
                 onClick={() => onAdd(rider)}
-                disabled={isInTeam || isTeamFull || !isSelectable || !isAffordable}
+                disabled={isInTeam || isRiderTeamFull || !isSelectable || !isAffordable}
                 className={`mt-4 w-full flex items-center justify-center text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300
                     ${isInTeam
                         ? 'bg-green-600 disabled:opacity-75 cursor-default'

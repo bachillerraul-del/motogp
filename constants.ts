@@ -1,9 +1,11 @@
 
 export const MOTOGP_BUDGET = 1000;
-export const MOTOGP_TEAM_SIZE = 5;
+export const MOTOGP_RIDER_LIMIT = 4;
 
 export const F1_BUDGET = 1000; // Representing 100.0M, as logic in app divides by 10
-export const F1_TEAM_SIZE = 5;
+export const F1_RIDER_LIMIT = 4;
+
+export const CONSTRUCTOR_LIMIT = 1;
 
 // Points based on standard scoring systems
 // MotoGP Main Race Points (Top 15)

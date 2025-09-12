@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useMemo, Suspense, lazy } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
@@ -7,21 +6,22 @@ import { Modal } from './components/Modal';
 import { supabase } from './lib/supabaseClient';
 import { useFantasyData } from './hooks/useFantasyData';
 import { getTeamForRace } from './lib/utils';
-import type { Rider, Participant, TeamSnapshot, Race, Sport } from './types';
-import { MOTOGP_BUDGET, MOTOGP_TEAM_SIZE, F1_BUDGET, F1_TEAM_SIZE } from './constants';
+import type { Rider, Participant, TeamSnapshot, Race, Sport, Constructor } from './types';
+import { MOTOGP_BUDGET, MOTOGP_RIDER_LIMIT, F1_BUDGET, F1_RIDER_LIMIT, CONSTRUCTOR_LIMIT } from './constants';
 import { MotoIcon, F1Icon } from './components/Icons';
 import { BottomNav } from './components/BottomNav';
 
 
-type View = 'home' | 'builder' | 'results' | 'rules' | 'riderDetail';
+type View = 'home' | 'builder' | 'results' | 'rules' | 'riderDetail' | 'constructorDetail';
 
 const Home = lazy(() => import('./components/Home').then(module => ({ default: module.Home })));
-// FIX: Added .js extension to satisfy module resolution for lazy loading. Although not explicitly required by error, it is a common fix for module resolution issues in React/Vite/Next.js setups.
 const TeamBuilder = lazy(() => import('./components/TeamBuilder').then(module => ({ default: module.TeamBuilder })));
 const Results = lazy(() => import('./components/Results').then(module => ({ default: module.Results })));
 const Login = lazy(() => import('./components/Login').then(module => ({ default: module.Login })));
 const Rules = lazy(() => import('./components/Rules').then(module => ({ default: module.Rules })));
 const RiderDetail = lazy(() => import('./components/RiderDetail').then(module => ({ default: module.RiderDetail })));
+const ConstructorDetail = lazy(() => import('./components/ConstructorDetail').then(module => ({ default: module.ConstructorDetail })));
+
 
 const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelect }) => (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 animate-fadeIn">
@@ -65,6 +65,7 @@ const App: React.FC = () => {
     const [view, setView] = useState<View>('home');
     const [previousView, setPreviousView] = useState<View>('home');
     const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
+    const [selectedConstructor, setSelectedConstructor] = useState<Constructor | null>(null);
     
     // Auth State
     const [session, setSession] = useState<Session | null>(null);
@@ -80,7 +81,7 @@ const App: React.FC = () => {
     const [newUserName, setNewUserName] = useState<string | null>(null);
 
     const {
-        participants, races, teamSnapshots, riders, allRiderPoints, loading, toast, setToast,
+        participants, races, teamSnapshots, riders, constructors, allRiderPoints, loading, toast, setToast,
         showToast, fetchData, addParticipantToLeague, handleUpdateParticipantTeam, handleUpdateParticipant,
         handleDeleteParticipant, handleUpdateRace, handleUpdateRider, handleBulkUpdatePoints
     } = useFantasyData(sport);
@@ -89,14 +90,16 @@ const App: React.FC = () => {
         if (sport === 'f1') {
             return {
                 BUDGET: F1_BUDGET,
-                TEAM_SIZE: F1_TEAM_SIZE,
+                RIDER_LIMIT: F1_RIDER_LIMIT,
+                CONSTRUCTOR_LIMIT: CONSTRUCTOR_LIMIT,
                 CURRENCY_PREFIX: '$',
                 CURRENCY_SUFFIX: 'M'
             };
         }
         return {
             BUDGET: MOTOGP_BUDGET,
-            TEAM_SIZE: MOTOGP_TEAM_SIZE,
+            RIDER_LIMIT: MOTOGP_RIDER_LIMIT,
+            CONSTRUCTOR_LIMIT: CONSTRUCTOR_LIMIT,
             CURRENCY_PREFIX: '€',
             CURRENCY_SUFFIX: ''
         };
@@ -104,7 +107,6 @@ const App: React.FC = () => {
     
     // Theme Management
     useEffect(() => {
-        // Reset body classes and apply the current sport theme
         document.body.className = 'bg-gray-900';
         if (sport) {
             document.body.classList.add(`sport-${sport}`);
@@ -169,7 +171,7 @@ const App: React.FC = () => {
     };
     
     useEffect(() => {
-        if (isAdmin && !loading && sport && races.length > 0 && riders.length > 0) {
+        if (isAdmin && !loading && sport && races.length > 0 && riders.length > 0 && constructors.length > 0) {
             const processPriceAdjustments = async () => {
                 const now = new Date();
                 const unprocessedPastRaces = races
@@ -178,139 +180,160 @@ const App: React.FC = () => {
 
                 if (unprocessedPastRaces.length === 0) return;
 
-                showToast(`Detectadas ${unprocessedPastRaces.length} jornadas pasadas. Ajustando precios...`, 'success');
+                showToast(`Detectadas ${unprocessedPastRaces.length} jornadas pasadas. Ajustando precios...`, 'info');
 
                 const currentRiderPrices = new Map<number, number>();
                 riders.forEach(r => currentRiderPrices.set(r.id, r.price));
+
+                const currentConstructorPrices = new Map<number, number>();
+                constructors.forEach(c => currentConstructorPrices.set(c.id, c.price));
                 
                 for (const race of unprocessedPastRaces) {
                     const riderSelectionCounts = new Map<number, number>();
+                    const constructorSelectionCounts = new Map<number, number>();
                     
                     const participantsWithTeamsForRace = participants.filter(p => {
-                        const teamForRace = getTeamForRace(p.id, race.id, teamSnapshots);
-                        return teamForRace.length > 0;
+                        const { riderIds, constructorId } = getTeamForRace(p.id, race.id, teamSnapshots);
+                        return riderIds.length > 0 && constructorId !== null;
                     });
                     
                     if (participantsWithTeamsForRace.length === 0) continue;
 
                     participantsWithTeamsForRace.forEach(p => {
-                        const teamForRace = getTeamForRace(p.id, race.id, teamSnapshots);
-                        teamForRace.forEach(riderId => {
+                        const { riderIds, constructorId } = getTeamForRace(p.id, race.id, teamSnapshots);
+                        riderIds.forEach(riderId => {
                             riderSelectionCounts.set(riderId, (riderSelectionCounts.get(riderId) || 0) + 1);
                         });
+                        if (constructorId) {
+                            constructorSelectionCounts.set(constructorId, (constructorSelectionCounts.get(constructorId) || 0) + 1);
+                        }
                     });
                     
                     const totalParticipantsForRace = participantsWithTeamsForRace.length;
                     
-                    const priceChanges = new Map<number, number>();
-                    
-                    const dominantRiders: number[] = []; // > 75%
-                    const veryPopularRiders: number[] = []; // > 50%
-                    const popularRiders: number[] = []; // > 25%
-                    const differentialRiders: number[] = []; // > 0% and <= 25%
-                    const unpopularRiders: number[] = []; // 0%
+                    // --- Rider Price Changes ---
+                    const riderPriceChanges = new Map<number, number>();
+                    const dominantRiders: number[] = [], veryPopularRiders: number[] = [], popularRiders: number[] = [], differentialRiders: number[] = [], unpopularRiders: number[] = [];
 
                     riders.forEach(rider => {
                         const selectionCount = riderSelectionCounts.get(rider.id) || 0;
                         const popularityPercent = totalParticipantsForRace > 0 ? (selectionCount / totalParticipantsForRace) * 100 : 0;
 
-                        if (popularityPercent > 75) {
-                            dominantRiders.push(rider.id);
-                        } else if (popularityPercent > 50) {
-                            veryPopularRiders.push(rider.id);
-                        } else if (popularityPercent > 25) {
-                            popularRiders.push(rider.id);
-                        } else if (popularityPercent > 0) {
-                            // These riders' prices don't change, but can be candidates for decrease if needed.
-                             if (!rider.condition) {
-                                 differentialRiders.push(rider.id);
-                            }
-                        } else { // selectionCount === 0
-                            if (!rider.condition) {
-                                unpopularRiders.push(rider.id);
-                            }
-                        }
+                        if (popularityPercent > 75) dominantRiders.push(rider.id);
+                        else if (popularityPercent > 50) veryPopularRiders.push(rider.id);
+                        else if (popularityPercent > 25) popularRiders.push(rider.id);
+                        else if (popularityPercent > 0) { if (!rider.condition) differentialRiders.push(rider.id); }
+                        else { if (!rider.condition) unpopularRiders.push(rider.id); }
                     });
 
-                    let totalIncrease = 0;
-                    dominantRiders.forEach(id => { priceChanges.set(id, 30); totalIncrease += 30; });
-                    veryPopularRiders.forEach(id => { priceChanges.set(id, 20); totalIncrease += 20; });
-                    popularRiders.forEach(id => { priceChanges.set(id, 10); totalIncrease += 10; });
+                    let totalRiderIncrease = 0;
+                    dominantRiders.forEach(id => { riderPriceChanges.set(id, 30); totalRiderIncrease += 30; });
+                    veryPopularRiders.forEach(id => { riderPriceChanges.set(id, 20); totalRiderIncrease += 20; });
+                    popularRiders.forEach(id => { riderPriceChanges.set(id, 10); totalRiderIncrease += 10; });
 
-                    let decreaseCandidates = unpopularRiders;
-                    if (decreaseCandidates.length === 0) {
-                        decreaseCandidates = differentialRiders;
-                    }
-
-                    decreaseCandidates.sort((a, b) => {
-                        const priceA = currentRiderPrices.get(a) || 0;
-                        const priceB = currentRiderPrices.get(b) || 0;
-                        return priceB - priceA; // Higher price first
-                    });
-                    
-                    let decreaseToDistribute = totalIncrease;
-                    if (decreaseCandidates.length > 0) {
+                    let riderDecreaseCandidates = unpopularRiders.length > 0 ? unpopularRiders : differentialRiders;
+                    if (riderDecreaseCandidates.length > 0) {
+                        riderDecreaseCandidates.sort((a, b) => (currentRiderPrices.get(b) || 0) - (currentRiderPrices.get(a) || 0));
+                        let decreaseToDistribute = totalRiderIncrease;
                         let candidateIndex = 0;
                         while (decreaseToDistribute >= 10) {
-                            const riderId = decreaseCandidates[candidateIndex];
-                            const currentChange = priceChanges.get(riderId) || 0;
-                            priceChanges.set(riderId, currentChange - 10);
+                            const riderId = riderDecreaseCandidates[candidateIndex];
+                            const currentChange = riderPriceChanges.get(riderId) || 0;
+                            riderPriceChanges.set(riderId, currentChange - 10);
                             decreaseToDistribute -= 10;
-                            candidateIndex = (candidateIndex + 1) % decreaseCandidates.length;
+                            candidateIndex = (candidateIndex + 1) % riderDecreaseCandidates.length;
                         }
                     }
 
-                    priceChanges.forEach((change, riderId) => {
+                    riderPriceChanges.forEach((change, riderId) => {
                         const currentPrice = currentRiderPrices.get(riderId) || 0;
-                        let newPrice = currentPrice + change;
-                        // Prevent negative prices as a basic safeguard
-                        newPrice = Math.max(0, newPrice);
-                        currentRiderPrices.set(riderId, newPrice);
+                        currentRiderPrices.set(riderId, Math.max(0, currentPrice + change));
+                    });
+
+                    // --- Constructor Price Changes ---
+                    const constructorPriceChanges = new Map<number, number>();
+                    const dominantConstructors: number[] = [], veryPopularConstructors: number[] = [], popularConstructors: number[] = [], unpopularConstructors: number[] = [];
+
+                    constructors.forEach(constructor => {
+                        const selectionCount = constructorSelectionCounts.get(constructor.id) || 0;
+                        const popularityPercent = totalParticipantsForRace > 0 ? (selectionCount / totalParticipantsForRace) * 100 : 0;
+
+                        if (popularityPercent > 75) dominantConstructors.push(constructor.id);
+                        else if (popularityPercent > 50) veryPopularConstructors.push(constructor.id);
+                        else if (popularityPercent > 25) popularConstructors.push(constructor.id);
+                        else if (popularityPercent === 0) unpopularConstructors.push(constructor.id);
+                    });
+
+                    let totalConstructorIncrease = 0;
+                    dominantConstructors.forEach(id => { constructorPriceChanges.set(id, 30); totalConstructorIncrease += 30; });
+                    veryPopularConstructors.forEach(id => { constructorPriceChanges.set(id, 20); totalConstructorIncrease += 20; });
+                    popularConstructors.forEach(id => { constructorPriceChanges.set(id, 10); totalConstructorIncrease += 10; });
+                    
+                    let constructorDecreaseCandidates = unpopularConstructors;
+                    if (constructorDecreaseCandidates.length > 0) {
+                        constructorDecreaseCandidates.sort((a, b) => (currentConstructorPrices.get(b) || 0) - (currentConstructorPrices.get(a) || 0));
+                        let decreaseToDistribute = totalConstructorIncrease;
+                        let candidateIndex = 0;
+                        while (decreaseToDistribute >= 10) {
+                            const constructorId = constructorDecreaseCandidates[candidateIndex];
+                            const currentChange = constructorPriceChanges.get(constructorId) || 0;
+                            constructorPriceChanges.set(constructorId, currentChange - 10);
+                            decreaseToDistribute -= 10;
+                            candidateIndex = (candidateIndex + 1) % constructorDecreaseCandidates.length;
+                        }
+                    }
+
+                    constructorPriceChanges.forEach((change, constructorId) => {
+                        const currentPrice = currentConstructorPrices.get(constructorId) || 0;
+                        currentConstructorPrices.set(constructorId, Math.max(0, currentPrice + change));
                     });
                 }
 
                 const ridersMap = new Map(riders.map(r => [r.id, r]));
                 const ridersToUpdate = Array.from(currentRiderPrices.entries()).map(([id, newPrice]) => {
                     const originalRider = ridersMap.get(id);
-                    if (!originalRider) {
-                        console.warn(`Could not find original rider data for ID: ${id}`);
-                        return null;
-                    }
-                    return {
-                        ...originalRider,
-                        price: newPrice,
-                        condition: originalRider.condition ?? null,
-                    };
-                }).filter((r): r is NonNullable<typeof r> => r !== null);
+                    if (!originalRider) return null;
+                    const { id: riderId, ...rest } = originalRider;
+                    return { ...rest, id: riderId, price: newPrice, condition: originalRider.condition ?? null };
+                }).filter((r): r is NonNullable<typeof r> => r !== null && r.price !== ridersMap.get(r.id)?.price);
+                
+                const constructorsMap = new Map(constructors.map(c => [c.id, c]));
+                const constructorsToUpdate = Array.from(currentConstructorPrices.entries()).map(([id, newPrice]) => {
+                    const original = constructorsMap.get(id);
+                    if (!original) return null;
+                    return { ...original, price: newPrice };
+                }).filter((c): c is NonNullable<typeof c> => c !== null && c.price !== constructorsMap.get(c.id)?.price);
 
+                let didUpdate = false;
                 if (ridersToUpdate.length > 0) {
+                    didUpdate = true;
                     const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
-                    const { error: riderUpdateError } = await supabase.from(riderTable).upsert(ridersToUpdate);
-
-                    if (riderUpdateError) {
-                        showToast('Error crítico al actualizar los precios de los pilotos.', 'error');
-                        console.error("Rider price update error:", riderUpdateError);
-                        return;
-                    }
+                    const { error } = await supabase.from(riderTable).upsert(ridersToUpdate);
+                    if (error) { showToast('Error crítico al actualizar precios de pilotos.', 'error'); console.error(error); return; }
+                }
+                
+                if (constructorsToUpdate.length > 0) {
+                    didUpdate = true;
+                    const constructorTable = sport === 'f1' ? 'f1_constructors' : 'teams';
+                    const { error } = await supabase.from(constructorTable).upsert(constructorsToUpdate);
+                    if (error) { showToast('Error crítico al actualizar precios de escuderías.', 'error'); console.error(error); return; }
                 }
 
                 const raceIdsToUpdate = unprocessedPastRaces.map(r => r.id);
                 const raceTable = sport === 'f1' ? 'f1_races' : 'races';
                 const { error: raceUpdateError } = await supabase.from(raceTable).update({ prices_adjusted: true }).in('id', raceIdsToUpdate);
 
-                if (raceUpdateError) {
-                    showToast('Error al marcar las jornadas como procesadas.', 'error');
-                    console.error("Race status update error:", raceUpdateError);
-                    return;
-                }
+                if (raceUpdateError) { showToast('Error al marcar jornadas como procesadas.', 'error'); console.error(raceUpdateError); return; }
                 
-                showToast('Precios de pilotos actualizados. Recargando datos...', 'success');
-                await fetchData();
+                if (didUpdate) {
+                    showToast('Precios de pilotos y escuderías actualizados. Recargando datos...', 'success');
+                    await fetchData();
+                }
             };
             processPriceAdjustments();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAdmin, loading, races, riders, participants, teamSnapshots, sport]);
+    }, [isAdmin, loading, races, riders, constructors, participants, teamSnapshots, sport]);
 
     const currentRace = useMemo(() => {
         const now = new Date();
@@ -330,10 +353,17 @@ const App: React.FC = () => {
         setSelectedRider(rider);
         setView('riderDetail');
     }, [view]);
+    
+    const handleSelectConstructor = useCallback((constructor: Constructor) => {
+        setPreviousView(view);
+        setSelectedConstructor(constructor);
+        setView('constructorDetail');
+    }, [view]);
 
     const handleBack = useCallback(() => {
         setView(previousView);
         setSelectedRider(null);
+        setSelectedConstructor(null);
     }, [previousView]);
 
     if (!sport) {
@@ -344,8 +374,8 @@ const App: React.FC = () => {
         return <LoadingSpinner message="Cargando datos de la liga..." sport={sport} />;
     }
 
-    const addParticipantAndSwitchView = async (name: string, team: Rider[], raceId: number): Promise<boolean> => {
-        const newParticipant = await addParticipantToLeague(name, team, raceId);
+    const addParticipantAndSwitchView = async (name: string, team: Rider[], constructor: Constructor, raceId: number): Promise<boolean> => {
+        const newParticipant = await addParticipantToLeague(name, team, constructor, raceId);
         if (newParticipant) {
             setView('results');
             handleUserLogin(newParticipant);
@@ -354,119 +384,137 @@ const App: React.FC = () => {
         return false;
     };
 
-    if (!currentUser && !isNewUserFlow) {
-        return (
-            <>
-                <Toast toast={toast} onClose={() => setToast(null)} />
+
+    return (
+        <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
+            <Toast toast={toast} onClose={() => setToast(null)} />
+
+            {!currentUser && !isNewUserFlow ? (
                 <Suspense fallback={<LoadingSpinner message="Cargando..." sport={sport} />}>
                     <Login
                         participants={participants}
                         onLogin={handleUserLogin}
                         onGoToBuilderForNew={handleGoToBuilderForNew}
                         sport={sport}
+                        onAdminLogin={() => setIsLoginModalOpen(true)}
                     />
                 </Suspense>
-            </>
-        );
-    }
+            ) : (
+                <>
+                    <Header
+                        currentView={view}
+                        isAdmin={isAdmin}
+                        onAdminLogin={() => setIsLoginModalOpen(true)}
+                        onAdminLogout={handleAdminLogout}
+                        currentUser={currentUser}
+                        onUserLogout={handleUserLogout}
+                        sport={sport}
+                        onSwitchSport={handleSwitchSport}
+                    />
+                    <main className="container mx-auto p-4 pb-24">
+                        <Suspense fallback={<LoadingSpinner message={`Cargando ${view}...`} sport={sport} />}>
+                            {view === 'home' && (
+                                <Home 
+                                    races={races}
+                                    currentRace={currentRace}
+                                    onGoToBuilder={() => setView('builder')}
+                                    sport={sport}
+                                    currentUser={currentUser}
+                                    participants={participants}
+                                    teamSnapshots={teamSnapshots}
+                                    riders={riders}
+                                    constructors={constructors}
+                                    allRiderPoints={allRiderPoints}
+                                />
+                            )}
+                            {view === 'builder' && (
+                                <TeamBuilder 
+                                    races={races}
+                                    riders={riders}
+                                    constructors={constructors}
+                                    participants={participants}
+                                    teamSnapshots={teamSnapshots}
+                                    onAddToLeague={addParticipantAndSwitchView}
+                                    onUpdateTeam={handleUpdateParticipantTeam}
+                                    showToast={showToast}
+                                    currentRace={currentRace}
+                                    currentUser={currentUser}
+                                    newUserName={newUserName}
+                                    BUDGET={constants.BUDGET}
+                                    RIDER_LIMIT={constants.RIDER_LIMIT}
+                                    CONSTRUCTOR_LIMIT={constants.CONSTRUCTOR_LIMIT}
+                                    currencyPrefix={constants.CURRENCY_PREFIX}
+                                    currencySuffix={constants.CURRENCY_SUFFIX}
+                                    sport={sport}
+                                    onSelectRider={handleSelectRider}
+                                    onSelectConstructor={handleSelectConstructor}
+                                />
+                            )}
+                            {view === 'results' && (
+                                <Results 
+                                    participants={participants}
+                                    races={races}
+                                    teamSnapshots={teamSnapshots}
+                                    riders={riders}
+                                    constructors={constructors}
+                                    isAdmin={isAdmin}
+                                    onUpdateParticipant={handleUpdateParticipant}
+                                    onDeleteParticipant={handleDeleteParticipant}
+                                    onUpdateRace={handleUpdateRace}
+                                    onUpdateRider={handleUpdateRider}
+                                    handleBulkUpdatePoints={handleBulkUpdatePoints}
+                                    showToast={showToast}
+                                    allRiderPoints={allRiderPoints}
+                                    refetchData={fetchData}
+                                    sport={sport}
+                                    RIDER_LIMIT={constants.RIDER_LIMIT}
+                                    CONSTRUCTOR_LIMIT={constants.CONSTRUCTOR_LIMIT}
+                                    currencyPrefix={constants.CURRENCY_PREFIX}
+                                    currencySuffix={constants.CURRENCY_SUFFIX}
+                                    currentUser={currentUser}
+                                    onSelectRider={handleSelectRider}
+                                />
+                            )}
+                            {view === 'rules' && (
+                                <Rules sport={sport}/>
+                            )}
+                            {view === 'riderDetail' && selectedRider && (
+                                <RiderDetail
+                                    rider={selectedRider}
+                                    races={races}
+                                    allRiderPoints={allRiderPoints}
+                                    participants={participants}
+                                    teamSnapshots={teamSnapshots}
+                                    sport={sport}
+                                    onBack={handleBack}
+                                    currencyPrefix={constants.CURRENCY_PREFIX}
+                                    currencySuffix={constants.CURRENCY_SUFFIX}
+                                />
+                            )}
+                             {view === 'constructorDetail' && selectedConstructor && (
+                                <ConstructorDetail
+                                    constructor={selectedConstructor}
+                                    races={races}
+                                    allRiderPoints={allRiderPoints}
+                                    participants={participants}
+                                    teamSnapshots={teamSnapshots}
+                                    riders={riders}
+                                    sport={sport}
+                                    onBack={handleBack}
+                                    currencyPrefix={constants.CURRENCY_PREFIX}
+                                    currencySuffix={constants.CURRENCY_SUFFIX}
+                                />
+                            )}
+                        </Suspense>
+                    </main>
 
-
-    return (
-        <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
-            <Toast toast={toast} onClose={() => setToast(null)} />
-            <Header 
-                currentView={view} 
-                isAdmin={isAdmin}
-                onAdminLogin={() => setIsLoginModalOpen(true)}
-                onAdminLogout={handleAdminLogout}
-                currentUser={currentUser}
-                onUserLogout={handleUserLogout}
-                sport={sport}
-                onSwitchSport={handleSwitchSport}
-            />
-            <main className="container mx-auto p-4 pb-24">
-                 <Suspense fallback={<LoadingSpinner message={`Cargando ${view}...`} sport={sport} />}>
-                    {view === 'home' && (
-                        <Home 
-                            races={races}
-                            currentRace={currentRace}
-                            onGoToBuilder={() => setView('builder')}
-                            sport={sport}
-                            currentUser={currentUser}
-                            participants={participants}
-                            teamSnapshots={teamSnapshots}
-                            riders={riders}
-                            allRiderPoints={allRiderPoints}
-                        />
-                    )}
-                    {view === 'builder' && (
-                        <TeamBuilder 
-                            races={races}
-                            riders={riders}
-                            participants={participants}
-                            teamSnapshots={teamSnapshots}
-                            onAddToLeague={addParticipantAndSwitchView}
-                            onUpdateTeam={handleUpdateParticipantTeam}
-                            showToast={showToast}
-                            currentRace={currentRace}
-                            currentUser={currentUser}
-                            newUserName={newUserName}
-                            BUDGET={constants.BUDGET}
-                            TEAM_SIZE={constants.TEAM_SIZE}
-                            currencyPrefix={constants.CURRENCY_PREFIX}
-                            currencySuffix={constants.CURRENCY_SUFFIX}
-                            sport={sport}
-                            onSelectRider={handleSelectRider}
-                        />
-                    )}
-                    {view === 'results' && (
-                        <Results 
-                            participants={participants}
-                            races={races}
-                            teamSnapshots={teamSnapshots}
-                            riders={riders}
-                            isAdmin={isAdmin}
-                            onUpdateParticipant={handleUpdateParticipant}
-                            onDeleteParticipant={handleDeleteParticipant}
-                            onUpdateRace={handleUpdateRace}
-                            onUpdateRider={handleUpdateRider}
-                            handleBulkUpdatePoints={handleBulkUpdatePoints}
-                            showToast={showToast}
-                            allRiderPoints={allRiderPoints}
-                            refetchData={fetchData}
-                            sport={sport}
-                            BUDGET={constants.BUDGET}
-                            TEAM_SIZE={constants.TEAM_SIZE}
-                            currencyPrefix={constants.CURRENCY_PREFIX}
-                            currencySuffix={constants.CURRENCY_SUFFIX}
-                            currentUser={currentUser}
-                            onSelectRider={handleSelectRider}
-                        />
-                    )}
-                     {view === 'rules' && (
-                        <Rules sport={sport}/>
-                    )}
-                    {view === 'riderDetail' && selectedRider && (
-                        <RiderDetail
-                            rider={selectedRider}
-                            races={races}
-                            allRiderPoints={allRiderPoints}
-                            participants={participants}
-                            teamSnapshots={teamSnapshots}
-                            sport={sport}
-                            onBack={handleBack}
-                            currencyPrefix={constants.CURRENCY_PREFIX}
-                            currencySuffix={constants.CURRENCY_SUFFIX}
-                        />
-                    )}
-                </Suspense>
-            </main>
-
-            <BottomNav
-                currentView={view}
-                setView={setView}
-                sport={sport}
-            />
+                    <BottomNav
+                        currentView={view}
+                        setView={setView}
+                        sport={sport}
+                    />
+                </>
+            )}
 
             <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Login" sport={sport}>
                 <form onSubmit={handleLogin} className="space-y-4">

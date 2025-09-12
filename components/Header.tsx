@@ -1,9 +1,11 @@
+
 import React from 'react';
 import { MotoIcon, LoginIcon, LogoutIcon, UserIcon, F1Icon } from './Icons';
 import type { Participant, Sport } from '../types';
 
 interface HeaderProps {
-    currentView: 'home' | 'builder' | 'results' | 'rules' | 'riderDetail';
+    // FIX: Added 'constructorDetail' to the view types to match the possible views in App.tsx.
+    currentView: 'home' | 'builder' | 'results' | 'rules' | 'riderDetail' | 'constructorDetail';
     isAdmin: boolean;
     onAdminLogin: () => void;
     onAdminLogout: () => void;
@@ -22,7 +24,9 @@ export const Header: React.FC<HeaderProps> = ({ currentView, isAdmin, onAdminLog
         builder: 'Crear Equipo',
         results: 'Resultados',
         rules: 'Reglas del Juego',
-        riderDetail: 'Detalles del Piloto'
+        riderDetail: 'Detalles del Piloto',
+        // FIX: Added a title for the constructor detail view.
+        constructorDetail: 'Detalles de Escudería'
     };
 
     return (
@@ -62,11 +66,9 @@ export const Header: React.FC<HeaderProps> = ({ currentView, isAdmin, onAdminLog
                             </button>
                         </div>
                     ) : (
-                        currentUser === null && (
-                            <button onClick={onAdminLogin} className="text-gray-300 hover:bg-gray-700 hover:text-white p-1.5 rounded-full">
-                                <LoginIcon className="w-5 h-5" />
-                            </button>
-                        )
+                        <button onClick={onAdminLogin} className="text-gray-300 hover:bg-gray-700 hover:text-white p-1.5 rounded-full" aria-label="Admin Login">
+                            <LoginIcon className="w-5 h-5" />
+                        </button>
                     )}
                 </div>
             </div>

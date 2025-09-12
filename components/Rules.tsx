@@ -1,8 +1,8 @@
 import React from 'react';
 import type { Sport } from '../types';
 import {
-    MOTOGP_TEAM_SIZE, MOTOGP_BUDGET, MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS,
-    F1_TEAM_SIZE, F1_BUDGET, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS
+    MOTOGP_RIDER_LIMIT, MOTOGP_BUDGET, MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS,
+    F1_RIDER_LIMIT, F1_BUDGET, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS, CONSTRUCTOR_LIMIT
 } from '../constants';
 import { BookOpenIcon, TrophyIcon, UsersIcon, ChartBarIcon } from './Icons';
 
@@ -32,11 +32,11 @@ export const Rules: React.FC<RulesProps> = ({ sport }) => {
     const isF1 = sport === 'f1';
     const theme = {
         primaryColor: isF1 ? 'text-red-500' : 'text-orange-500',
-        primaryBorder: isF1 ? 'border-red-600' : 'border-orange-500',
     };
     
     const rules = {
-        teamSize: isF1 ? F1_TEAM_SIZE : MOTOGP_TEAM_SIZE,
+        riderLimit: isF1 ? F1_RIDER_LIMIT : MOTOGP_RIDER_LIMIT,
+        constructorLimit: CONSTRUCTOR_LIMIT,
         budget: isF1 ? `${(F1_BUDGET / 10).toFixed(1)}M` : MOTOGP_BUDGET.toLocaleString('es-ES'),
         currency: isF1 ? '$' : '€',
         mainRacePoints: isF1 ? F1_MAIN_RACE_POINTS : MOTOGP_MAIN_RACE_POINTS,
@@ -56,20 +56,24 @@ export const Rules: React.FC<RulesProps> = ({ sport }) => {
 
             <RuleCard title="Creación de Equipo" icon={<UsersIcon className={`w-8 h-8 ${theme.primaryColor}`}/>}>
                 <p>
-                    Cada jugador debe formar un equipo compuesto por <strong>{rules.teamSize} pilotos</strong>.
+                    Cada jugador debe formar un equipo compuesto por <strong>{rules.riderLimit} pilotos</strong> y <strong>{rules.constructorLimit} escudería</strong>.
                 </p>
                 <p>
-                    Dispones de un presupuesto máximo de <strong>{rules.currency}{rules.budget}</strong> para fichar a tus pilotos. ¡Elige sabiamente y gestiona tu dinero!
+                    Dispones de un presupuesto máximo de <strong>{rules.currency}{rules.budget}</strong> para fichar a tus pilotos y escudería. ¡Elige sabiamente y gestiona tu dinero!
                 </p>
                 <p>
-                    Puedes cambiar tu equipo antes de la fecha límite de cada Gran Premio, que suele ser el inicio de la carrera principal. Si no realizas cambios, tu equipo de la jornada anterior se mantendrá.
+                    Puedes cambiar tu equipo antes de la fecha límite de cada Gran Premio. Si no realizas cambios, tu equipo de la jornada anterior se mantendrá.
                 </p>
             </RuleCard>
 
             <RuleCard title="Sistema de Puntuación" icon={<TrophyIcon className={`w-8 h-8 ${theme.primaryColor}`}/>}>
                 <p>
-                    Los puntos se basan en los resultados oficiales de las carreras. Tu puntuación total en una jornada es la suma de los puntos obtenidos por todos los pilotos de tu equipo.
+                    Tu puntuación total en una jornada es la suma de los puntos obtenidos por tus <strong>pilotos</strong> y tu <strong>escudería</strong>.
                 </p>
+                 <div>
+                    <h3 className="font-bold text-white mb-2">Puntuación de Escudería:</h3>
+                    <p>La escudería seleccionada puntuará con el <strong>promedio de los puntos obtenidos por sus dos mejores pilotos</strong> en esa jornada (puntos de carrera principal + sprint). Si solo un piloto puntúa, su puntuación se dividirá entre dos. Si ninguno puntúa, la escudería obtiene 0 puntos.</p>
+                </div>
                 <div>
                     <h3 className="font-bold text-white mb-2">Puntos de la Carrera Principal (Top {mainRacePositions}):</h3>
                     <ol className="list-decimal list-inside text-sm grid grid-cols-2 sm:grid-cols-3 gap-1">
@@ -90,11 +94,11 @@ export const Rules: React.FC<RulesProps> = ({ sport }) => {
 
             <RuleCard title="Mercado de Pilotos" icon={<ChartBarIcon className={`w-8 h-8 ${theme.primaryColor}`}/>}>
                 <p>
-                    El valor de los pilotos no es estático. Después de cada Gran Premio, los precios de los pilotos se ajustarán automáticamente según su popularidad en el juego.
+                    El valor de los pilotos y escuderías no es estático. Después de cada Gran Premio, los precios se ajustarán automáticamente según su popularidad en el juego.
                 </p>
                 <ul className="list-disc list-inside space-y-2">
-                    <li>Un piloto muy seleccionado por los jugadores <strong>subirá de precio</strong>.</li>
-                    <li>Un piloto poco seleccionado <strong>bajará de precio</strong>.</li>
+                    <li>Un piloto/escudería muy seleccionado <strong>subirá de precio</strong>.</li>
+                    <li>Un piloto/escudería poco seleccionado <strong>bajará de precio</strong>.</li>
                 </ul>
                 <p>
                     Esta dinámica añade una capa extra de estrategia. ¡Fichar a una futura estrella antes de que su precio se dispare puede darte una gran ventaja!

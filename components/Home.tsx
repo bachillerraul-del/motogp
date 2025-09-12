@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
-import type { Race, Sport, Participant, TeamSnapshot, Rider, AllRiderPoints } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import type { Race, Sport, Participant, TeamSnapshot, Rider, AllRiderPoints, Constructor } from '../types';
 import { Countdown } from './Countdown';
-import { CalendarIcon, UserCircleIcon, ClipboardDocumentListIcon, TrophyIcon } from './Icons';
+import { CalendarIcon, UserCircleIcon, ClipboardDocumentListIcon, TrophyIcon, ExclamationTriangleIcon } from './Icons';
 import { getLatestTeam, getTeamForRace } from '../lib/utils';
+import { MOTOGP_BUDGET, MOTOGP_RIDER_LIMIT, F1_BUDGET, F1_RIDER_LIMIT } from '../constants';
 
 interface HomeProps {
     races: Race[];
@@ -13,6 +14,7 @@ interface HomeProps {
     participants: Participant[];
     teamSnapshots: TeamSnapshot[];
     riders: Rider[];
+    constructors: Constructor[];
     allRiderPoints: AllRiderPoints;
 }
 
@@ -29,14 +31,15 @@ const formatDate = (dateString: string) => {
 export const Home: React.FC<HomeProps> = (props) => {
     const { 
         races, currentRace, onGoToBuilder, sport, currentUser,
-        participants, teamSnapshots, riders, allRiderPoints
+        participants, teamSnapshots, riders, constructors, allRiderPoints
     } = props;
 
     const deadlineDate = useMemo(() => currentRace?.race_date ? new Date(currentRace.race_date) : null, [currentRace]);
     const [timeRemaining, setTimeRemaining] = React.useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
     const isMarketOpen = deadlineDate ? new Date() < deadlineDate : false;
+    const [isCarriedOverTeamInvalid, setIsCarriedOverTeamInvalid] = useState(false);
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (!deadlineDate || new Date() >= deadlineDate) {
              setTimeRemaining({ days: 0, hours: 0, minutes: 0, seconds: 0 });
             return;
@@ -63,6 +66,32 @@ export const Home: React.FC<HomeProps> = (props) => {
 
         return () => clearInterval(timer);
     }, [deadlineDate]);
+    
+    useEffect(() => {
+        if (currentUser && riders.length > 0 && constructors.length > 0 && teamSnapshots.length > 0 && isMarketOpen) {
+            const { riderIds, constructorId } = getLatestTeam(currentUser.id, races, teamSnapshots);
+            if (riderIds.length > 0 && constructorId) {
+                const ridersById = new Map(riders.map(r => [r.id, r]));
+                const constructorsById = new Map(constructors.map(c => [c.id, c]));
+
+                const riderCost = riderIds.reduce((total, id) => total + (ridersById.get(id)?.price || 0), 0);
+                const constructorCost = constructorsById.get(constructorId)?.price || 0;
+                const teamCost = riderCost + constructorCost;
+
+                const BUDGET = sport === 'f1' ? F1_BUDGET : MOTOGP_BUDGET;
+                const RIDER_LIMIT = sport === 'f1' ? F1_RIDER_LIMIT : MOTOGP_RIDER_LIMIT;
+
+                if (riderIds.length !== RIDER_LIMIT || teamCost > BUDGET) {
+                    setIsCarriedOverTeamInvalid(true);
+                } else {
+                    setIsCarriedOverTeamInvalid(false);
+                }
+            }
+        } else {
+            setIsCarriedOverTeamInvalid(false);
+        }
+    }, [currentUser, riders, constructors, teamSnapshots, races, sport, isMarketOpen]);
+
 
     const sportName = sport === 'f1' ? 'Formula 1' : 'MotoGP';
     const theme = {
@@ -74,14 +103,26 @@ export const Home: React.FC<HomeProps> = (props) => {
         iconColor: sport === 'f1' ? 'text-red-500' : 'text-orange-500',
     };
 
-    // RENDER DASHBOARD FOR LOGGED-IN USER
     if (currentUser) {
         const calculateTotalScore = (participantId: number): number => {
             return races.reduce((totalScore, race) => {
-                const teamForRace = getTeamForRace(participantId, race.id, teamSnapshots);
+                const { riderIds, constructorId } = getTeamForRace(participantId, race.id, teamSnapshots);
                 const racePointsMap = allRiderPoints[race.id] || {};
-                const raceScore = teamForRace.reduce((acc, riderId) => acc + (racePointsMap[riderId] || 0), 0);
-                return totalScore + raceScore;
+                
+                const riderScore = riderIds.reduce((acc, riderId) => acc + (racePointsMap[riderId] || 0), 0);
+
+                let constructorScore = 0;
+                if (constructorId) {
+                    const constructorRiderPoints = riders
+                        .filter(r => r.constructor_id === constructorId)
+                        .map(r => racePointsMap[r.id] || 0)
+                        .sort((a, b) => b - a);
+                    if(constructorRiderPoints.length > 0) {
+                        constructorScore = (constructorRiderPoints[0] + (constructorRiderPoints[1] || 0)) / 2;
+                    }
+                }
+
+                return totalScore + riderScore + constructorScore;
             }, 0);
         };
 
@@ -89,33 +130,50 @@ export const Home: React.FC<HomeProps> = (props) => {
             return [...participants]
                 .map(p => ({ ...p, score: calculateTotalScore(p.id) }))
                 .sort((a, b) => b.score - a.score);
-        }, [participants, races, teamSnapshots, allRiderPoints]);
+        }, [participants, races, teamSnapshots, allRiderPoints, riders]);
 
         const currentUserData = sortedParticipants.find(p => p.id === currentUser.id);
         const rank = currentUserData ? sortedParticipants.findIndex(p => p.id === currentUser.id) + 1 : null;
         const totalScore = currentUserData?.score ?? 0;
 
-        const latestTeamIds = getLatestTeam(currentUser.id, races, teamSnapshots);
+        const { riderIds, constructorId } = getLatestTeam(currentUser.id, races, teamSnapshots);
         const ridersById = useMemo(() => new Map(riders.map(r => [r.id, r])), [riders]);
+        const constructorsById = useMemo(() => new Map(constructors.map(c => [c.id, c])), [constructors]);
+        const teamConstructor = constructorId ? constructorsById.get(constructorId) : null;
 
 
         return (
             <div className="max-w-6xl mx-auto animate-fadeIn">
+                 {isCarriedOverTeamInvalid && (
+                    <div className="bg-yellow-500/10 border-l-4 border-yellow-500 text-yellow-300 p-4 rounded-lg mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <div className="flex items-center gap-3">
+                            <ExclamationTriangleIcon className="w-8 h-8 flex-shrink-0" />
+                            <div>
+                                <h3 className="font-bold">¡Atención! Tu equipo necesita una revisión.</h3>
+                                <p className="text-sm">Debido a los cambios de precios o de reglas, tu equipo actual excede el presupuesto o no es válido.</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onGoToBuilder}
+                            className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors w-full sm:w-auto flex-shrink-0"
+                        >
+                            Modificar Equipo
+                        </button>
+                    </div>
+                )}
                 <div className="mb-10">
                     <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">Hola, <span className={theme.primaryColor}>{currentUser.name}</span></h1>
                     <p className="mt-2 text-lg text-gray-300">Este es tu panel de control para la Fantasy League.</p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Left Column: Profile & Team */}
                     <div className="lg:col-span-2 space-y-8">
-                        {/* Profile Widget */}
                         <div className="bg-gray-800 rounded-lg shadow-lg p-6 flex items-center gap-6">
                             <UserCircleIcon className={`w-16 h-16 ${theme.iconColor} flex-shrink-0`} />
                             <div className="flex-grow grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="text-center sm:text-left bg-gray-900/50 p-4 rounded-lg">
                                     <p className="text-sm text-gray-400 uppercase">Puntuación Total</p>
-                                    <p className="text-3xl font-bold text-white">{totalScore}</p>
+                                    <p className="text-3xl font-bold text-white">{Math.round(totalScore)}</p>
                                 </div>
                                 <div className="text-center sm:text-left bg-gray-900/50 p-4 rounded-lg">
                                     <p className="text-sm text-gray-400 uppercase">Clasificación</p>
@@ -124,7 +182,6 @@ export const Home: React.FC<HomeProps> = (props) => {
                             </div>
                         </div>
 
-                        {/* Team Widget */}
                         <div className="bg-gray-800 rounded-lg shadow-lg p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-3">
@@ -139,8 +196,8 @@ export const Home: React.FC<HomeProps> = (props) => {
                                 </button>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                                {latestTeamIds.length > 0 ? (
-                                    latestTeamIds.map(riderId => {
+                                {riderIds.length > 0 ? (
+                                    riderIds.map(riderId => {
                                         const rider = ridersById.get(riderId);
                                         if (!rider) return null;
                                         return (
@@ -153,11 +210,16 @@ export const Home: React.FC<HomeProps> = (props) => {
                                 ) : (
                                     <p className="text-gray-400 col-span-full text-center py-4">Aún no has creado un equipo.</p>
                                 )}
+                                {teamConstructor && (
+                                     <div className="bg-gray-700/50 p-3 rounded-md">
+                                        <p className="font-bold text-white truncate">{teamConstructor.name}</p>
+                                        <p className="text-sm text-gray-400">Escudería</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    {/* Right Column: Next Race */}
                     <div className="lg:col-span-1">
                         {currentRace && deadlineDate ? (
                              <div className={`bg-gray-800 rounded-lg shadow-2xl p-6 border-2 h-full flex flex-col justify-between ${theme.primaryBorder} ${theme.primaryShadow}`}>
@@ -190,8 +252,6 @@ export const Home: React.FC<HomeProps> = (props) => {
         );
     }
 
-
-    // RENDER GENERIC HOME FOR NEW VISITORS
     return (
         <div className="max-w-5xl mx-auto animate-fadeIn">
             <div className="text-center mb-10">

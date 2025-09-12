@@ -1,12 +1,14 @@
+
 import React, { useState } from 'react';
 import type { Participant, Sport } from '../types';
-import { MotoIcon, UserPlusIcon, F1Icon } from './Icons';
+import { MotoIcon, UserPlusIcon, F1Icon, LoginIcon } from './Icons';
 
 interface LoginProps {
     participants: Participant[];
     onLogin: (participant: Participant) => void;
     onGoToBuilderForNew: (name: string) => void;
     sport: Sport;
+    onAdminLogin: () => void;
 }
 
 const ParticipantCard: React.FC<{ participant: Participant; onSelect: () => void; sport: Sport }> = ({ participant, onSelect, sport }) => (
@@ -22,7 +24,7 @@ const ParticipantCard: React.FC<{ participant: Participant; onSelect: () => void
     </div>
 );
 
-export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuilderForNew, sport }) => {
+export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuilderForNew, sport, onAdminLogin }) => {
     const [isCreating, setIsCreating] = useState(false);
     const [newName, setNewName] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -56,7 +58,17 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
     };
 
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 animate-fadeIn">
+        <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 animate-fadeIn relative">
+            <div className="absolute top-4 right-4 z-10">
+                <button
+                    onClick={onAdminLogin}
+                    className="text-gray-400 hover:text-white p-2 rounded-full transition-colors duration-200 hover:bg-gray-700"
+                    aria-label="Admin Login"
+                >
+                    <LoginIcon className="w-6 h-6" />
+                </button>
+            </div>
+
             <header className="text-center mb-10">
                 <div className="flex justify-center items-center gap-4 mb-4">
                     <SportIcon className="text-5xl"/>

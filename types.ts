@@ -7,7 +7,15 @@ export interface Rider {
     bike: string;
     price: number;
     initial_price: number;
-    condition?: string; // e.g., 'Rider on fire'
+    condition?: string | null;
+    constructor_id: number;
+}
+
+export interface Constructor {
+    id: number;
+    name: string;
+    price: number;
+    initial_price: number;
 }
 
 export interface Participant {
@@ -18,7 +26,8 @@ export interface Participant {
 export interface TeamSnapshot {
     id: number;
     participant_id: number;
-    team_ids: number[];
+    rider_ids: number[];
+    constructor_id: number;
     created_at: string;
     race_id: number | null;
 }
@@ -31,6 +40,11 @@ export interface Race {
     race_date: string;
     prices_adjusted: boolean;
 }
+
+export type TeamSelection = {
+    riderIds: number[];
+    constructorId: number | null;
+};
 
 export type RiderRoundPoints = number;
 export type AllRiderPoints = Record<number, Record<number, RiderRoundPoints>>;

@@ -1,13 +1,16 @@
 import React from 'react';
-import type { Rider, Participant, Sport } from '../types';
+import type { Rider, Participant, Sport, Constructor } from '../types';
 import { XCircleIcon, ExclamationTriangleIcon } from './Icons';
 
 interface TeamSidebarProps {
-    team: Rider[];
-    onRemove: (riderId: number) => void;
+    riders: Rider[];
+    constructor: Constructor | null;
+    onRemoveRider: (riderId: number) => void;
+    onRemoveConstructor: () => void;
     budget: number;
     remainingBudget: number;
-    teamSize: number;
+    riderLimit: number;
+    constructorLimit: number;
     currentUser: Participant | null;
     newUserName: string | null;
     currencyPrefix: string;
@@ -21,11 +24,14 @@ interface TeamSidebarProps {
 }
 
 export const TeamSidebar: React.FC<TeamSidebarProps> = ({
-    team,
-    onRemove,
+    riders,
+    constructor,
+    onRemoveRider,
+    onRemoveConstructor,
     budget,
     remainingBudget,
-    teamSize,
+    riderLimit,
+    constructorLimit,
     currentUser,
     newUserName,
     currencyPrefix,
@@ -37,7 +43,8 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
     sport,
     onClose
 }) => {
-    const isTeamFull = team.length === teamSize;
+    const isRiderTeamFull = riders.length === riderLimit;
+    const isConstructorTeamFull = !!constructor;
     const isBudgetExceeded = remainingBudget < 0;
     const teamName = currentUser?.name || newUserName || 'Nuevo Participante';
     
@@ -63,13 +70,13 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
     };
 
     const renderValidationMessage = () => {
-        if (!isTeamFull) {
-            return (
-                <div className="flex items-center gap-2 text-yellow-400 bg-yellow-400/10 p-3 rounded-lg text-sm">
-                    <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
-                    <span>Debes seleccionar {teamSize - team.length} piloto{teamSize - team.length > 1 ? 's' : ''} más.</span>
-                </div>
-            );
+        const messages = [];
+        if (!isRiderTeamFull) {
+            const ridersNeeded = riderLimit - riders.length;
+            messages.push(`Debes seleccionar ${ridersNeeded} piloto${ridersNeeded > 1 ? 's' : ''} más.`);
+        }
+        if (!isConstructorTeamFull) {
+            messages.push(`Debes seleccionar ${constructorLimit} escudería.`);
         }
         if (isBudgetExceeded) {
              return (
@@ -78,6 +85,14 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
                     <span>Has excedido el presupuesto.</span>
                 </div>
             );
+        }
+        if(messages.length > 0) {
+            return (
+                <div className="flex items-center gap-2 text-yellow-400 bg-yellow-400/10 p-3 rounded-lg text-sm">
+                    <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
+                    <span>{messages.join(' ')}</span>
+                </div>
+            )
         }
         return null;
     };
@@ -102,15 +117,15 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
             {renderBudgetStatus()}
 
             <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-2">
-                {team.length > 0 ? (
-                    team.map(rider => (
+                {riders.length > 0 ? (
+                    riders.map(rider => (
                         <div key={rider.id} className="bg-gray-700/50 p-2 rounded-md flex justify-between items-center animate-fadeIn">
                             <div>
                                 <p className="font-semibold text-white text-sm">{rider.name}</p>
                                 <p className="text-xs text-gray-400">{formatPrice(rider.price)}</p>
                             </div>
                              <button
-                                onClick={() => onRemove(rider.id)}
+                                onClick={() => onRemoveRider(rider.id)}
                                 className="p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-gray-600 transition-colors"
                                 aria-label={`Eliminar a ${rider.name}`}
                             >
@@ -119,9 +134,23 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
                         </div>
                     ))
                 ) : (
-                    <div className="text-center py-8 text-gray-500">
-                        <p>Tu equipo está vacío.</p>
+                    <div className="text-center py-4 text-gray-500">
                         <p className="text-sm">Selecciona pilotos de la lista.</p>
+                    </div>
+                )}
+                {constructor && (
+                     <div className="bg-gray-600/50 p-2 rounded-md flex justify-between items-center animate-fadeIn border-l-4 border-yellow-400">
+                        <div>
+                            <p className="font-semibold text-white text-sm">{constructor.name}</p>
+                            <p className="text-xs text-gray-400">{formatPrice(constructor.price)} (Escudería)</p>
+                        </div>
+                            <button
+                            onClick={onRemoveConstructor}
+                            className="p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-gray-600 transition-colors"
+                            aria-label={`Eliminar a ${constructor.name}`}
+                        >
+                            <XCircleIcon className="w-5 h-5" />
+                        </button>
                     </div>
                 )}
             </div>
@@ -129,8 +158,14 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
             <div className="border-t border-gray-700 pt-4 space-y-2">
                 <div className="flex justify-between items-center text-lg">
                     <span className="font-semibold text-gray-300">Pilotos:</span>
-                    <span className={`font-bold ${isTeamFull ? 'text-green-400' : 'text-yellow-400'}`}>
-                        {team.length}/{teamSize}
+                    <span className={`font-bold ${isRiderTeamFull ? 'text-green-400' : 'text-yellow-400'}`}>
+                        {riders.length}/{riderLimit}
+                    </span>
+                </div>
+                 <div className="flex justify-between items-center text-lg">
+                    <span className="font-semibold text-gray-300">Escudería:</span>
+                    <span className={`font-bold ${isConstructorTeamFull ? 'text-green-400' : 'text-yellow-400'}`}>
+                        {constructor ? 1 : 0}/{constructorLimit}
                     </span>
                 </div>
                 {renderValidationMessage()}

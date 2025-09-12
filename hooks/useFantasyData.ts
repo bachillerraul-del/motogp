@@ -1,19 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import type { Sport, Participant, Race, Rider, TeamSnapshot, AllRiderPoints } from '../types';
+import type { Sport, Participant, Race, Rider, TeamSnapshot, AllRiderPoints, Constructor } from '../types';
 
-type ToastMessage = { id: number; message: string; type: 'success' | 'error' };
+// FIX: Added 'info' to the toast message types to support informational messages.
+type ToastMessage = { id: number; message: string; type: 'success' | 'error' | 'info' };
 
 export const useFantasyData = (sport: Sport | null) => {
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [races, setRaces] = useState<Race[]>([]);
     const [teamSnapshots, setTeamSnapshots] = useState<TeamSnapshot[]>([]);
     const [riders, setRiders] = useState<Rider[]>([]);
+    const [constructors, setConstructors] = useState<Constructor[]>([]);
     const [allRiderPoints, setAllRiderPoints] = useState<AllRiderPoints>({});
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<ToastMessage | null>(null);
 
-    const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
         setToast({ id: Date.now(), message, type });
     }, []);
 
@@ -24,6 +26,7 @@ export const useFantasyData = (sport: Sport | null) => {
             const participantTable = 'participants';
             const raceTable = sport === 'f1' ? 'f1_races' : 'races';
             const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
+            const constructorTable = sport === 'f1' ? 'f1_constructors' : 'teams'; // FIX: Use 'teams' for MotoGP constructors
             const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
             const pointsTable = sport === 'f1' ? 'f1_rider_points' : 'rider_points';
 
@@ -32,12 +35,14 @@ export const useFantasyData = (sport: Sport | null) => {
                 { data: racesData, error: racesError },
                 { data: snapshotsData, error: snapshotsError },
                 { data: ridersData, error: ridersError },
+                { data: constructorsData, error: constructorsError },
                 { data: pointsData, error: pointsError }
             ] = await Promise.all([
                 supabase.from(participantTable).select('*'),
                 supabase.from(raceTable).select('*').order('round', { ascending: true }),
                 supabase.from(snapshotTable).select('*'),
                 supabase.from(riderTable).select('*'),
+                supabase.from(constructorTable).select('*'),
                 supabase.from(pointsTable).select('*')
             ]);
             
@@ -45,12 +50,14 @@ export const useFantasyData = (sport: Sport | null) => {
             if (racesError) throw racesError;
             if (snapshotsError) throw snapshotsError;
             if (ridersError) throw ridersError;
+            if (constructorsError) throw constructorsError;
             if (pointsError) throw pointsError;
 
             setParticipants(participantsData || []);
             setRaces(racesData || []);
             setTeamSnapshots(snapshotsData || []);
             setRiders(ridersData || []);
+            setConstructors(constructorsData || []);
             
             const pointsMap: AllRiderPoints = {};
             (pointsData || []).forEach(p => {
@@ -77,7 +84,7 @@ export const useFantasyData = (sport: Sport | null) => {
         }
     }, [sport, fetchData]);
 
-    const addParticipantToLeague = async (name: string, team: Rider[], raceId: number): Promise<Participant | null> => {
+    const addParticipantToLeague = async (name: string, riders: Rider[], constructor: Constructor, raceId: number): Promise<Participant | null> => {
         const { data: newParticipantData, error: participantError } = await supabase
             .from('participants')
             .insert({ name })
@@ -93,14 +100,14 @@ export const useFantasyData = (sport: Sport | null) => {
         const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
         const { error: snapshotError } = await supabase.from(snapshotTable).insert({
             participant_id: newParticipantData.id,
-            team_ids: team.map(r => r.id),
+            rider_ids: riders.map(r => r.id),
+            constructor_id: constructor.id,
             race_id: raceId
         });
 
         if (snapshotError) {
             showToast('Error al guardar el equipo inicial.', 'error');
             console.error(snapshotError);
-            // Optionally, delete the created participant
             await supabase.from('participants').delete().eq('id', newParticipantData.id);
             return null;
         }
@@ -110,11 +117,12 @@ export const useFantasyData = (sport: Sport | null) => {
         return newParticipantData;
     };
 
-    const handleUpdateParticipantTeam = async (participantId: number, team: Rider[], raceId: number): Promise<boolean> => {
+    const handleUpdateParticipantTeam = async (participantId: number, riders: Rider[], constructor: Constructor, raceId: number): Promise<boolean> => {
         const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
         const { error } = await supabase.from(snapshotTable).insert({
             participant_id: participantId,
-            team_ids: team.map(r => r.id),
+            rider_ids: riders.map(r => r.id),
+            constructor_id: constructor.id,
             race_id: raceId
         });
 
@@ -171,13 +179,8 @@ export const useFantasyData = (sport: Sport | null) => {
     
     const handleUpdateRider = async (rider: Rider): Promise<void> => {
         const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
-        const { error } = await supabase.from(riderTable).update({ 
-            name: rider.name,
-            team: rider.team,
-            bike: rider.bike,
-            price: rider.price,
-            condition: rider.condition
-        }).eq('id', rider.id);
+        const { id, ...updateData } = rider;
+        const { error } = await supabase.from(riderTable).update(updateData).eq('id', id);
 
         if (error) {
             showToast('Error al actualizar el piloto.', 'error');
@@ -228,6 +231,7 @@ export const useFantasyData = (sport: Sport | null) => {
         races,
         teamSnapshots,
         riders,
+        constructors,
         allRiderPoints,
         loading,
         toast,

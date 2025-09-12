@@ -48,8 +48,8 @@ export const RiderDetail: React.FC<RiderDetailProps> = (props) => {
         }, 0);
 
         const selectionCount = participants.filter(p => {
-            const latestTeam = getLatestTeam(p.id, races, teamSnapshots);
-            return latestTeam.includes(rider.id);
+            const { riderIds } = getLatestTeam(p.id, races, teamSnapshots);
+            return riderIds.includes(rider.id);
         }).length;
 
         const selectionPercentage = participants.length > 0 ? (selectionCount / participants.length) * 100 : 0;
@@ -78,7 +78,7 @@ export const RiderDetail: React.FC<RiderDetailProps> = (props) => {
             .sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
 
         for (const race of sortedAdjustedRaces) {
-            const participantsWithTeamsForRace = participants.filter(p => getTeamForRace(p.id, race.id, teamSnapshots).length > 0);
+            const participantsWithTeamsForRace = participants.filter(p => getTeamForRace(p.id, race.id, teamSnapshots).riderIds.length > 0);
             const totalParticipantsForRace = participantsWithTeamsForRace.length;
 
             if (totalParticipantsForRace === 0) {
@@ -87,25 +87,18 @@ export const RiderDetail: React.FC<RiderDetailProps> = (props) => {
             }
 
             const selectionCount = participantsWithTeamsForRace.filter(p => {
-                const teamForRace = getTeamForRace(p.id, race.id, teamSnapshots);
-                return teamForRace.includes(rider.id);
+                const { riderIds } = getTeamForRace(p.id, race.id, teamSnapshots);
+                return riderIds.includes(rider.id);
             }).length;
 
             const popularityPercent = (selectionCount / totalParticipantsForRace) * 100;
 
             let priceChange = 0;
-            if (popularityPercent > 75) {
-                priceChange = 30;
-            } else if (popularityPercent > 50) {
-                priceChange = 20;
-            } else if (popularityPercent > 25) {
-                priceChange = 10;
-            }
-            // Price decreases are not simulated as they depend on the entire market's state (zero-sum logic).
+            if (popularityPercent > 75) priceChange = 30;
+            else if (popularityPercent > 50) priceChange = 20;
+            else if (popularityPercent > 25) priceChange = 10;
             
-            let newPrice = currentPrice + priceChange;
-            currentPrice = Math.max(0, newPrice); // Prevent negative prices
-
+            currentPrice = Math.max(0, currentPrice + priceChange);
             history.push({ raceRound: race.round, price: currentPrice });
         }
         
@@ -119,7 +112,6 @@ export const RiderDetail: React.FC<RiderDetailProps> = (props) => {
                 Volver
             </button>
 
-            {/* Rider Header */}
             <header className="bg-gray-800 rounded-lg shadow-lg p-6 mb-8">
                 <div className="flex flex-col sm:flex-row gap-6 items-center">
                     <div className="flex-grow text-center sm:text-left">
@@ -133,7 +125,6 @@ export const RiderDetail: React.FC<RiderDetailProps> = (props) => {
                 </div>
             </header>
 
-            {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <StatCard title="Puntos Totales" value={stats.totalPoints} icon={<TrophyIcon className="w-8 h-8"/>}/>
                 <StatCard title="Selección en Liga" value={`${stats.selectionPercentage.toFixed(1)}%`} icon={<UsersIcon className="w-8 h-8"/>}/>
@@ -153,13 +144,11 @@ export const RiderDetail: React.FC<RiderDetailProps> = (props) => {
                 />
             </div>
             
-             {/* Price History Chart */}
-            <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-8">
+             <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-8">
                  <h2 className="text-2xl font-bold text-white mb-4">Evolución del Precio</h2>
                  <PriceChart data={priceHistory} sport={sport} currencyPrefix={currencyPrefix} currencySuffix={currencySuffix} />
             </div>
 
-            {/* Points by Race */}
             <div className="bg-gray-800 rounded-lg shadow-lg p-6">
                 <h2 className="text-2xl font-bold text-white mb-4">Puntos por Jornada</h2>
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-2">

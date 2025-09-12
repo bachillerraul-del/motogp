@@ -15,10 +15,10 @@ interface AdminPanelProps {
     onClearPoints: () => void;
     riders: Rider[];
     riderPoints: AllRiderPoints;
-    onPointChange: (riderId: number, points: string) => Promise<void>;
     onUpdateRider: (rider: Rider) => Promise<void>;
     onBulkUpdatePoints: (roundId: number, newPoints: Map<number, number>, previousRiderIds: number[]) => Promise<void>;
-    showToast: (message: string, type: 'success' | 'error') => void;
+    // FIX: Added 'info' to the toast types to support informational messages.
+    showToast: (message: string, type: 'success' | 'error' | 'info') => void;
     sport: Sport;
 }
 
@@ -35,7 +35,7 @@ const formatDatetimeLocal = (dateStr: string | null | undefined): string => {
 export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
         races, selectedRace, onSelectRace, onUpdateRace, onClearPoints,
-        riders, riderPoints, onPointChange, onUpdateRider, onBulkUpdatePoints, showToast, sport
+        riders, riderPoints, onUpdateRider, onBulkUpdatePoints, showToast, sport
     } = props;
 
     const [editedRaceDate, setEditedRaceDate] = useState('');
@@ -90,7 +90,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         if (name === 'condition') {
             setRiderFormData({
                 ...riderFormData,
-                condition: value === '' ? undefined : value,
+                condition: value === '' ? null : value,
             });
         } else {
             setRiderFormData({

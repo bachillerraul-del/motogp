@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Rider, Participant, TeamSnapshot, Sport } from '../types';
+import type { Rider, Participant, TeamSnapshot, Sport, Constructor } from '../types';
 
 type AllRiderPoints = Record<number, Record<number, number>>;
 
@@ -75,7 +75,6 @@ export async function fetchRaceResultsFromAI(
             },
         });
 
-        // FIX: Added .trim() to response.text before parsing, as recommended by Gemini API guidelines.
         const jsonResponse = JSON.parse(response.text.trim());
         return jsonResponse as AIResult[];
 
@@ -226,43 +225,50 @@ export async function fetchF1RacePositionsFromAI(
 
 export async function getAITeamAdvice(
     team: Rider[],
+    constructor: Constructor | null,
     remainingBudget: number,
     availableRiders: Rider[],
+    availableConstructors: Constructor[],
     sport: Sport
 ): Promise<string> {
     const sportContext = {
         motogp: {
             name: "MotoGP",
-            rules: "El equipo debe tener 5 pilotos y un presupuesto máximo de 1000€. Los precios son en euros."
+            rules: "El equipo debe tener 4 pilotos, 1 escudería y un presupuesto máximo de 1000€. Los precios son en euros."
         },
         f1: {
             name: "Fórmula 1",
-            rules: "El equipo debe tener 5 pilotos y un presupuesto máximo de 100.0M$. Los precios están multiplicados por 10 (ej. 220 es 22.0M$).",
+            rules: "El equipo debe tener 4 pilotos, 1 escudería y un presupuesto máximo de 100.0M$. Los precios están multiplicados por 10 (ej. 220 es 22.0M$).",
         }
     };
 
     const teamComposition = team.map(r => `${r.name} (Precio: ${r.price})`).join('\n');
     const availableRidersList = availableRiders.map(r => `${r.name} (Precio: ${r.price})`).join(', ');
+    const availableConstructorsList = availableConstructors.map(c => `${c.name} (Precio: ${c.price})`).join(', ');
 
     const prompt = `
         Eres un experto analista de la liga de fantasía de ${sportContext[sport].name}. Un usuario te pide consejo sobre su equipo.
         Reglas de la liga: ${sportContext[sport].rules}
 
         Equipo actual del usuario:
+        Pilotos:
         ${teamComposition.length > 0 ? teamComposition : "Aún no ha seleccionado a nadie."}
+        Escudería:
+        ${constructor ? `${constructor.name} (Precio: ${constructor.price})` : "Aún no ha seleccionado ninguna."}
         
         Presupuesto restante: ${remainingBudget}
 
         Pilotos disponibles para fichar: ${availableRidersList}
+        Escuderías disponibles para fichar: ${availableConstructorsList}
 
         Tu tarea es analizar su equipo y darle consejos estratégicos. Sé conciso y directo. Tu respuesta debe tener el siguiente formato:
         
         **Análisis del Equipo:**
-        *   **Fortalezas:** (Describe 1 o 2 puntos fuertes. Por ejemplo: "Gran potencial de puntos con tus pilotos de élite" o "Buena diversificación entre equipos").
-        *   **Debilidades:** (Describe 1 o 2 puntos débiles. Por ejemplo: "Demasiada dependencia de un solo equipo" o "Pilotos de gama media arriesgados").
+        *   **Fortalezas:** (Describe 1 o 2 puntos fuertes. Por ejemplo: "Gran potencial de puntos con tus pilotos de élite y una escudería fiable" o "Buena diversificación entre equipos").
+        *   **Debilidades:** (Describe 1 o 2 puntos débiles. Por ejemplo: "Demasiada dependencia de un solo equipo" o "Escudería arriesgada con pilotos inconsistentes").
 
         **Sugerencias:**
-        (Ofrece 1 o 2 sugerencias de cambio CONCRETAS y ACCIONABLES. Menciona a un piloto del equipo actual y por quién podría cambiarlo de la lista de disponibles, explicando el porqué del cambio. Por ejemplo: "Considera cambiar a [Piloto A] por [Piloto B]. Esto te daría [X] de presupuesto extra para mejorar otra posición y [Piloto B] está en buena forma.").
+        (Ofrece 1 o 2 sugerencias de cambio CONCRETAS y ACCIONABLES. Puedes sugerir cambiar un piloto o la escudería. Por ejemplo: "Considera cambiar a [Piloto A] por [Piloto B] para liberar presupuesto" o "Cambiar [Escudería A] por [Escudería B] podría darte más consistencia en los puntos.").
 
         Sé positivo y alentador. No uses más de 150 palabras en total.
     `;
