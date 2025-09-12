@@ -6,7 +6,7 @@ import { MotoIcon, UserPlusIcon, F1Icon, LoginIcon } from './Icons';
 interface LoginProps {
     participants: Participant[];
     onLogin: (participant: Participant) => void;
-    onGoToBuilderForNew: (name: string) => void;
+    onGoToBuilderForNew: (name: string) => Promise<void>;
     sport: Sport;
     onAdminLogin: () => void;
 }
@@ -29,7 +29,7 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
     const [newName, setNewName] = useState('');
     const [error, setError] = useState<string | null>(null);
 
-    const handleNewUserSubmit = (e: React.FormEvent) => {
+    const handleNewUserSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
         const trimmedName = newName.trim();
@@ -45,7 +45,7 @@ export const Login: React.FC<LoginProps> = ({ participants, onLogin, onGoToBuild
             return;
         }
 
-        onGoToBuilderForNew(trimmedName);
+        await onGoToBuilderForNew(trimmedName);
     };
 
     const SportIcon = sport === 'f1' ? F1Icon : MotoIcon;

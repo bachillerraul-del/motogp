@@ -1,6 +1,8 @@
 import React from 'react';
 import type { Rider, Participant, Sport, Constructor } from '../types';
-import { XCircleIcon, ExclamationTriangleIcon } from './Icons';
+import { XCircleIcon, ExclamationTriangleIcon, CheckIcon, ArrowPathIcon } from './Icons';
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 interface TeamSidebarProps {
     riders: Rider[];
@@ -16,10 +18,8 @@ interface TeamSidebarProps {
     currencyPrefix: string;
     currencySuffix: string;
     isTeamValid: boolean;
-    isSubmitting: boolean;
-    submitButtonText: string;
-    onSubmit: () => void;
     sport: Sport;
+    saveState: SaveState;
     onClose?: () => void;
 }
 
@@ -37,10 +37,8 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
     currencyPrefix,
     currencySuffix,
     isTeamValid,
-    isSubmitting,
-    submitButtonText,
-    onSubmit,
     sport,
+    saveState,
     onClose
 }) => {
     const isRiderTeamFull = riders.length === riderLimit;
@@ -96,6 +94,24 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
         }
         return null;
     };
+    
+    const renderSaveStatus = () => {
+        switch (saveState) {
+            case 'saving':
+                return <div className="flex items-center justify-center gap-2 text-center text-sm text-yellow-400 p-3 bg-yellow-500/10 rounded-lg"><ArrowPathIcon className="w-4 h-4 animate-spin" /> Guardando...</div>;
+            case 'saved':
+                return <div className="flex items-center justify-center gap-2 text-center text-sm text-green-400 p-3 bg-green-500/10 rounded-lg"><CheckIcon className="w-4 h-4" /> Equipo guardado</div>;
+            case 'error':
+                return <div className="flex items-center justify-center gap-2 text-center text-sm text-red-500 p-3 bg-red-500/10 rounded-lg"><ExclamationTriangleIcon className="w-4 h-4" /> Error al guardar</div>;
+            case 'idle':
+            default:
+                if (isTeamValid) {
+                     return <div className="flex items-center justify-center gap-2 text-center text-sm text-green-400 p-3 bg-green-500/10 rounded-lg"><CheckIcon className="w-4 h-4" /> ¡Equipo listo!</div>;
+                }
+                return <div className="p-3 h-[40px]"></div>; // Placeholder
+        }
+    };
+
 
     const teamNameColor = sport === 'f1' ? 'text-red-600' : 'text-orange-500';
 
@@ -171,13 +187,7 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
                 {renderValidationMessage()}
             </div>
             
-            <button
-                onClick={onSubmit}
-                disabled={!isTeamValid || isSubmitting}
-                className="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors duration-300 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
-            >
-                {isSubmitting ? 'Guardando...' : submitButtonText}
-            </button>
+            {renderSaveStatus()}
         </aside>
     );
 };

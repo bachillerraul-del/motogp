@@ -1,10 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Rider, Race, Participant, Sport, Constructor } from '../types';
 import { TeamSidebar } from './TeamSidebar';
 import { getLatestTeam } from '../lib/utils';
-import { ArrowUpIcon, ArrowDownIcon, FireIcon, AddIcon, RemoveIcon, XCircleIcon, UsersIcon, TrophyIcon, ChartBarIcon } from './Icons';
+import { ArrowUpIcon, ArrowDownIcon, FireIcon, AddIcon, RemoveIcon, XCircleIcon, UsersIcon, TrophyIcon, ChartBarIcon, ArrowPathIcon, ExclamationTriangleIcon, CheckIcon } from './Icons';
 import { Modal } from './Modal';
 import { useFantasy } from '../contexts/FantasyDataContext';
+
+// Helper function to create a unique, sorted identifier for a team selection.
+const getTeamIdentifier = (riders: Rider[], constructor: Constructor | null): string => {
+    const riderIds = riders.map(r => r.id).sort().join(',');
+    const constructorId = constructor ? constructor.id : 'null';
+    return `riders:${riderIds}|constructor:${constructorId}`;
+};
 
 // --- Components for Constructor Stats Modal ---
 
@@ -117,13 +124,11 @@ const ConstructorStats: React.FC<ConstructorStatsProps> = ({ constructorItem, sp
 };
 
 // --- TeamBuilder Component and Children ---
-
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 interface TeamBuilderProps {
-    onAddToLeague: (name: string, riders: Rider[], constructor: Constructor, raceId: number) => Promise<boolean>;
     onUpdateTeam: (participantId: number, riders: Rider[], constructor: Constructor, raceId: number) => Promise<boolean>;
     currentRace: Race | null;
     currentUser: Participant | null;
-    newUserName: string | null;
     BUDGET: number;
     RIDER_LIMIT: number;
     CONSTRUCTOR_LIMIT: number;
@@ -260,7 +265,7 @@ const ConstructorRow: React.FC<{
 
 export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
     const {
-        onAddToLeague, onUpdateTeam, currentRace, currentUser, newUserName,
+        onUpdateTeam, currentRace, currentUser,
         BUDGET, RIDER_LIMIT, CONSTRUCTOR_LIMIT, currencyPrefix, currencySuffix, sport, onSelectRider
     } = props;
     
@@ -276,10 +281,14 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
 
     const [selectedRiders, setSelectedRiders] = useState<Rider[]>(initialTeam.initialRiders);
     const [selectedConstructor, setSelectedConstructor] = useState<Constructor | null>(initialTeam.initialConstructor);
-    const [isSubmitting, setIsSubmitting] = useState(false);
     const [isTeamSheetOpen, setIsTeamSheetOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'riders' | 'constructors'>('riders');
     const [viewingConstructor, setViewingConstructor] = useState<Constructor | null>(null);
+    const [saveState, setSaveState] = useState<SaveState>('idle');
+    const isInitialMount = useRef(true);
+    const saveStateResetTimer = useRef<number | null>(null);
+
+    const initialTeamIdentifier = useMemo(() => getTeamIdentifier(initialTeam.initialRiders, initialTeam.initialConstructor), [initialTeam]);
 
     const remainingBudget = useMemo(() => {
         const riderCost = selectedRiders.reduce((total, rider) => total + rider.price, 0);
@@ -287,6 +296,60 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
         return BUDGET - riderCost - constructorCost;
     }, [selectedRiders, selectedConstructor, BUDGET]);
     
+    const isTeamValid = selectedRiders.length === RIDER_LIMIT && !!selectedConstructor && remainingBudget >= 0;
+
+    useEffect(() => {
+        return () => {
+            if (saveStateResetTimer.current) {
+                clearTimeout(saveStateResetTimer.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        if (saveStateResetTimer.current) {
+            clearTimeout(saveStateResetTimer.current);
+            saveStateResetTimer.current = null;
+        }
+
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            if (initialTeam.initialRiders.length > 0 || initialTeam.initialConstructor) {
+                setSaveState('saved');
+                saveStateResetTimer.current = window.setTimeout(() => setSaveState('idle'), 3000);
+            }
+            return;
+        }
+
+        const currentTeamIdentifier = getTeamIdentifier(selectedRiders, selectedConstructor);
+
+        if (currentTeamIdentifier === initialTeamIdentifier) {
+            setSaveState('saved');
+            saveStateResetTimer.current = window.setTimeout(() => setSaveState('idle'), 3000);
+            return;
+        }
+
+        setSaveState('idle');
+
+        const debounceHandler = setTimeout(() => {
+            if (isTeamValid && currentUser && currentRace && selectedConstructor && currentTeamIdentifier !== initialTeamIdentifier) {
+                setSaveState('saving');
+                onUpdateTeam(currentUser.id, selectedRiders, selectedConstructor, currentRace.id)
+                    .then(success => {
+                        if (!success) {
+                            setSaveState('error');
+                            showToast('Error al guardar el equipo.', 'error');
+                        } else {
+                            showToast('Equipo guardado automáticamente.', 'success');
+                        }
+                    });
+            }
+        }, 2000);
+
+        return () => clearTimeout(debounceHandler);
+    }, [selectedRiders, selectedConstructor, isTeamValid, initialTeamIdentifier, currentUser, currentRace, onUpdateTeam, showToast, initialTeam.initialRiders.length, initialTeam.initialConstructor]);
+
+
     const formatPrice = (price: number): string => {
         const value = currencySuffix === 'M' ? (price / 10).toFixed(1) : price.toLocaleString('es-ES');
         return `${currencyPrefix}${value}${currencySuffix}`;
@@ -332,31 +395,24 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
     };
     
     const handleRemoveConstructor = () => setSelectedConstructor(null);
-
-    const isTeamValid = selectedRiders.length === RIDER_LIMIT && !!selectedConstructor && remainingBudget >= 0;
-
-    const handleSubmit = async () => {
-        if (!isTeamValid || !selectedConstructor) {
-            showToast('Tu equipo no es válido. Revisa la composición y el presupuesto.', 'error');
-            return;
+    
+    const renderSaveStatus = () => {
+        switch (saveState) {
+            case 'saving':
+                return <div className="flex items-center justify-center gap-2 text-center text-sm text-yellow-400 p-2 bg-yellow-500/10 rounded-lg"><ArrowPathIcon className="w-4 h-4 animate-spin" /> Guardando...</div>;
+            case 'saved':
+                return <div className="flex items-center justify-center gap-2 text-center text-sm text-green-400 p-2 bg-green-500/10 rounded-lg animate-fadeIn"><CheckIcon className="w-4 h-4" /> Equipo guardado</div>;
+            case 'error':
+                return <div className="flex items-center justify-center gap-2 text-center text-sm text-red-500 p-2 bg-red-500/10 rounded-lg"><ExclamationTriangleIcon className="w-4 h-4" /> Error al guardar</div>;
+            case 'idle':
+            default:
+                if (isTeamValid) {
+                     return <div className="flex items-center justify-center gap-2 text-center text-sm text-green-400 p-2"><CheckIcon className="w-4 h-4" /> ¡Equipo listo!</div>;
+                }
+                return null;
         }
-        if (!currentRace) {
-            showToast('No hay una jornada activa para guardar el equipo.', 'error');
-            return;
-        }
-        
-        setIsSubmitting(true);
-        let success = false;
-        
-        if (currentUser) {
-            success = await onUpdateTeam(currentUser.id, selectedRiders, selectedConstructor, currentRace.id);
-        } else if (newUserName) {
-            success = await onAddToLeague(newUserName, selectedRiders, selectedConstructor, currentRace.id);
-        }
-
-        if (success) setIsTeamSheetOpen(false);
-        setIsSubmitting(false);
     };
+
 
     if (!currentRace) {
         return (
@@ -367,7 +423,6 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
         );
     }
     
-    const submitButtonText = currentUser ? 'Actualizar Equipo' : 'Unirse a la Liga';
     const tabActiveStyle = 'border-fuchsia-500 text-white font-bold';
     const tabInactiveStyle = 'border-transparent text-gray-400';
 
@@ -431,7 +486,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
             </div>
 
             <div className="fixed bottom-16 left-0 right-0 bg-gray-800 border-t border-gray-700 p-2 shadow-lg z-30 animate-fadeIn">
-                 <div className="container mx-auto flex items-center justify-between gap-2">
+                 <div className="container mx-auto flex items-center justify-between gap-2 relative">
                     <div className="flex-grow flex items-center gap-4 text-sm text-gray-300">
                         <div className="flex items-center gap-2">
                            <UsersIcon className="w-5 h-5"/>
@@ -444,8 +499,11 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
                            <p className={`font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>{formatPrice(remainingBudget)}</p>
                         </div>
                     </div>
+                     <div className="absolute left-1/2 -translate-x-1/2 hidden md:block">
+                        {renderSaveStatus()}
+                    </div>
                     <button onClick={() => setIsTeamSheetOpen(true)} className={`text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 flex-shrink-0 ${isTeamValid ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                       Ver Equipo y Guardar
+                       Ver Mi Equipo
                     </button>
                  </div>
             </div>
@@ -469,14 +527,12 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
                                     riderLimit={RIDER_LIMIT}
                                     constructorLimit={CONSTRUCTOR_LIMIT}
                                     currentUser={currentUser}
-                                    newUserName={newUserName}
+                                    newUserName={null}
                                     currencyPrefix={currencyPrefix}
                                     currencySuffix={currencySuffix}
                                     isTeamValid={isTeamValid}
-                                    isSubmitting={isSubmitting}
-                                    submitButtonText={submitButtonText}
-                                    onSubmit={handleSubmit}
                                     sport={sport}
+                                    saveState={saveState}
                                     onClose={() => setIsTeamSheetOpen(false)}
                                 />
                             </div>

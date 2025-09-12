@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useMemo, Suspense, lazy } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
@@ -59,7 +60,8 @@ const LoadingSpinner: React.FC<{ message: string, sport: Sport | null }> = ({ me
     </div>
 );
 
-const MainApp: React.FC<{ sport: Sport; setSport: (sport: Sport | null) => void }> = ({ sport, setSport }) => {
+// FIX: Correctly type `setSport` to accept a state updater function.
+const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateAction<Sport | null>> }> = ({ sport, setSport }) => {
     const [view, setView] = useState<View>('home');
     const [previousView, setPreviousView] = useState<View>('home');
     const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
@@ -73,12 +75,10 @@ const MainApp: React.FC<{ sport: Sport; setSport: (sport: Sport | null) => void 
     const isAdmin = !!session;
 
     const [currentUser, setCurrentUser] = useState<Participant | null>(null);
-    const [isNewUserFlow, setIsNewUserFlow] = useState(false);
-    const [newUserName, setNewUserName] = useState<string | null>(null);
     
     const {
         participants, races, teamSnapshots, riders, constructors, loading, toast, setToast,
-        showToast, fetchData, addParticipantToLeague, handleUpdateParticipantTeam
+        showToast, fetchData, addParticipant, handleUpdateParticipantTeam
     } = useFantasy();
 
     const constants = useMemo(() => {
@@ -167,8 +167,6 @@ const MainApp: React.FC<{ sport: Sport; setSport: (sport: Sport | null) => void 
 
     const handleUserLogin = (participant: Participant) => {
         setCurrentUser(participant);
-        setIsNewUserFlow(false);
-        setNewUserName(null);
         showToast(`¡Hola, ${participant.name}!`, 'success');
     };
 
@@ -176,10 +174,12 @@ const MainApp: React.FC<{ sport: Sport; setSport: (sport: Sport | null) => void 
         setCurrentUser(null);
     };
 
-    const handleGoToBuilderForNew = (name: string) => {
-        setNewUserName(name);
-        setIsNewUserFlow(true);
-        setView('builder');
+    const handleGoToBuilderForNew = async (name: string) => {
+        const newParticipant = await addParticipant(name);
+        if (newParticipant) {
+            handleUserLogin(newParticipant);
+            setView('builder');
+        }
     };
 
     const currentRace = useMemo(() => {
@@ -212,16 +212,6 @@ const MainApp: React.FC<{ sport: Sport; setSport: (sport: Sport | null) => void 
         setSelectedConstructor(null);
     }, [previousView]);
 
-    const addParticipantAndSwitchView = async (name: string, team: Rider[], constructor: Constructor, raceId: number): Promise<boolean> => {
-        const newParticipant = await addParticipantToLeague(name, team, constructor, raceId);
-        if (newParticipant) {
-            setView('results');
-            handleUserLogin(newParticipant);
-            return true;
-        }
-        return false;
-    };
-
     if (loading) {
         return <LoadingSpinner message="Cargando datos de la liga..." sport={sport} />;
     }
@@ -230,7 +220,7 @@ const MainApp: React.FC<{ sport: Sport; setSport: (sport: Sport | null) => void 
          <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
             <Toast toast={toast} onClose={() => setToast(null)} />
 
-            {!currentUser && !isNewUserFlow ? (
+            {!currentUser ? (
                 <Suspense fallback={<LoadingSpinner message="Cargando..." sport={sport} />}>
                     <Login
                         participants={participants}
@@ -264,11 +254,9 @@ const MainApp: React.FC<{ sport: Sport; setSport: (sport: Sport | null) => void 
                             )}
                             {view === 'builder' && (
                                 <TeamBuilder 
-                                    onAddToLeague={addParticipantAndSwitchView}
                                     onUpdateTeam={handleUpdateParticipantTeam}
                                     currentRace={currentRace}
                                     currentUser={currentUser}
-                                    newUserName={newUserName}
                                     BUDGET={constants.BUDGET}
                                     RIDER_LIMIT={constants.RIDER_LIMIT}
                                     CONSTRUCTOR_LIMIT={constants.CONSTRUCTOR_LIMIT}

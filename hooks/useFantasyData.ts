@@ -114,7 +114,7 @@ export const useFantasyData = (sport: Sport | null) => {
         }
     }, [sport, fetchData]);
 
-    const addParticipantToLeague = async (name: string, riders: Rider[], constructor: Constructor, raceId: number): Promise<Participant | null> => {
+    const addParticipant = async (name: string): Promise<Participant | null> => {
         const { data: newParticipantData, error: participantError } = await supabase
             .from('participants')
             .insert({ name })
@@ -127,27 +127,12 @@ export const useFantasyData = (sport: Sport | null) => {
             return null;
         }
 
-        const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
-        const { error: snapshotError } = await supabase.from(snapshotTable).insert({
-            participant_id: newParticipantData.id,
-            rider_ids: riders.map(r => r.id),
-            constructor_id: constructor.id,
-            race_id: raceId
-        });
-
-        if (snapshotError) {
-            showToast('Error al guardar el equipo inicial.', 'error');
-            console.error(snapshotError);
-            await supabase.from('participants').delete().eq('id', newParticipantData.id);
-            return null;
-        }
-
-        showToast(`¡Bienvenido a la liga, ${name}! Tu equipo ha sido guardado.`, 'success');
+        showToast(`¡Bienvenido a la liga, ${name}!`, 'success');
         await fetchData();
         return newParticipantData;
     };
 
-    const handleUpdateParticipantTeam = async (participantId: number, riders: Rider[], constructor: Constructor, raceId: number): Promise<boolean> => {
+    const handleUpdateParticipantTeam = useCallback(async (participantId: number, riders: Rider[], constructor: Constructor, raceId: number): Promise<boolean> => {
         const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
         const { error } = await supabase.from(snapshotTable).insert({
             participant_id: participantId,
@@ -162,10 +147,9 @@ export const useFantasyData = (sport: Sport | null) => {
             return false;
         }
         
-        showToast('¡Equipo actualizado con éxito!', 'success');
         await fetchData();
         return true;
-    };
+    }, [sport, showToast, fetchData]);
     
     const handleUpdateParticipant = async (participant: Participant): Promise<void> => {
         const { error } = await supabase.from('participants').update({ name: participant.name }).eq('id', participant.id);
@@ -268,7 +252,7 @@ export const useFantasyData = (sport: Sport | null) => {
         setToast,
         showToast,
         fetchData,
-        addParticipantToLeague,
+        addParticipant,
         handleUpdateParticipantTeam,
         handleUpdateParticipant,
         handleDeleteParticipant,
