@@ -20,6 +20,7 @@ const TeamBuilder = lazy(() => import('./components/TeamBuilder').then(module =>
 const Results = lazy(() => import('./components/Results').then(module => ({ default: module.Results })));
 const Login = lazy(() => import('./components/Login').then(module => ({ default: module.Login })));
 const Rules = lazy(() => import('./components/Rules').then(module => ({ default: module.Rules })));
+const LeagueStats = lazy(() => import('./components/LeagueStats').then(module => ({ default: module.LeagueStats })));
 
 
 const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelect }) => (
@@ -271,6 +272,7 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
                                 />
                             )}
                             {view === 'rules' && <Rules sport={sport}/>}
+                            {view === 'stats' && <LeagueStats sport={sport} currencyPrefix={constants.CURRENCY_PREFIX} currencySuffix={constants.CURRENCY_SUFFIX}/>}
                         </Suspense>
                     </main>
                     <BottomNav currentView={view} setView={setView} sport={sport} />

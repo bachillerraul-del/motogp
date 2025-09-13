@@ -1,6 +1,6 @@
 // FIX: Corrected typo from 'motogogp' to 'motogp'.
 export type Sport = 'motogp' | 'f1';
-export type View = 'home' | 'builder' | 'results' | 'rules';
+export type View = 'home' | 'builder' | 'results' | 'rules' | 'stats';
 
 export interface Rider {
     id: number;

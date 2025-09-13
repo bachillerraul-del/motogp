@@ -72,47 +72,74 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
     }, []);
 
     useEffect(() => {
-        if (saveStateResetTimer.current) {
-            clearTimeout(saveStateResetTimer.current);
-            saveStateResetTimer.current = null;
-        }
-
+        if (saveStateResetTimer.current) clearTimeout(saveStateResetTimer.current);
+    
         if (isInitialMount.current) {
             isInitialMount.current = false;
+            // If there's an initial team, mark it as 'saved' to give user confidence
             if (initialTeam.initialRiders.length > 0 || initialTeam.initialConstructor) {
                 setSaveState('saved');
                 saveStateResetTimer.current = window.setTimeout(() => setSaveState('idle'), 3000);
             }
             return;
         }
-
+    
         const currentTeamIdentifier = getTeamIdentifier(selectedRiders, selectedConstructor);
-
+    
+        // If the selection matches the last saved state from the server, we're good.
         if (currentTeamIdentifier === initialTeamIdentifier) {
             setSaveState('saved');
-            saveStateResetTimer.current = window.setTimeout(() => setSaveState('idle'), 3000);
             return;
         }
-
-        setSaveState('idle');
-
-        const debounceHandler = setTimeout(() => {
-            if (isTeamValid && currentUser && currentRace && selectedConstructor && currentTeamIdentifier !== initialTeamIdentifier) {
-                setSaveState('saving');
-                onUpdateTeam(currentUser.id, selectedRiders, selectedConstructor, currentRace.id)
-                    .then(success => {
-                        if (!success) {
-                            setSaveState('error');
-                            showToast('Error al guardar el equipo.', 'error');
-                        } else {
-                            showToast('Equipo guardado automáticamente.', 'success');
-                        }
-                    });
+    
+        // If team is not valid, don't save, just show idle state.
+        // The sidebar will show why it's not valid.
+        if (!isTeamValid) {
+            setSaveState('idle');
+            return;
+        }
+        
+        // If we have a valid team that is different from the saved one, save it immediately.
+        const save = async () => {
+            if (!currentUser || !currentRace || !selectedConstructor) return;
+    
+            setSaveState('saving');
+            const success = await onUpdateTeam(currentUser.id, selectedRiders, selectedConstructor, currentRace.id);
+    
+            if (success) {
+                showToast('Equipo guardado automáticamente.', 'success');
+                // `onUpdateTeam` triggers a refetch, which will update `initialTeamIdentifier`.
+                // The next render's useEffect will see that identifiers match and set state to 'saved'.
+            } else {
+                // OPTIMISTIC REVERT on failure
+                setSaveState('error');
+                showToast('Error al guardar. Se restauró tu equipo anterior.', 'error');
+                
+                // Revert the local state to what's on the server.
+                setSelectedRiders(initialTeam.initialRiders);
+                setSelectedConstructor(initialTeam.initialConstructor);
+                
+                // Set a timer to clear the error state. After revert, the state will be 'saved' again, so we can transition to idle.
+                saveStateResetTimer.current = window.setTimeout(() => setSaveState('idle'), 4000);
             }
-        }, 2000);
-
-        return () => clearTimeout(debounceHandler);
-    }, [selectedRiders, selectedConstructor, isTeamValid, initialTeamIdentifier, currentUser, currentRace, onUpdateTeam, showToast, initialTeam.initialRiders.length, initialTeam.initialConstructor]);
+        };
+    
+        save();
+    
+        return () => { if (saveStateResetTimer.current) clearTimeout(saveStateResetTimer.current); };
+    
+    }, [
+        selectedRiders, 
+        selectedConstructor, 
+        isTeamValid, 
+        initialTeamIdentifier, 
+        currentUser, 
+        currentRace, 
+        onUpdateTeam, 
+        showToast, 
+        initialTeam.initialRiders,
+        initialTeam.initialConstructor
+    ]);
 
 
     const formatPrice = (price: number): string => {

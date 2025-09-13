@@ -109,6 +109,11 @@ export const Results: React.FC<ResultsProps> = (props) => {
     
         const ridersById = new Map(riders.map(r => [r.id, r]));
         const constructorsById = new Map(constructors.map(c => [c.id, c]));
+
+        const formatPrice = (price: number): string => {
+            const value = props.currencySuffix === 'M' ? (price / 10).toFixed(1) : price.toLocaleString('es-ES');
+            return `${props.currencyPrefix}${value}${props.currencySuffix}`;
+        }
     
         const participantTeams = participants.map(participant => {
             const { riderIds, constructorId } = getTeamForRace(participant.id, race.id, teamSnapshots);
@@ -124,17 +129,17 @@ export const Results: React.FC<ResultsProps> = (props) => {
         participantTeams.forEach(({ participant, teamRiders, teamConstructor }) => {
             text += `*${participant.name}*:\n`;
             teamRiders.forEach(rider => {
-                text += `  • ${rider.name}\n`;
+                text += `  • ${rider.name} (${formatPrice(rider.price)})\n`;
             });
             if (teamConstructor) {
-                text += `  • _${teamConstructor.name} (Escudería)_\n`;
+                text += `  • _${teamConstructor.name} (Escudería)_ (${formatPrice(teamConstructor.price)})\n`;
             }
             text += '\n';
         });
     
         setShareableText(text);
         setIsShareModalOpen(true);
-    }, [leaderboardView, races, participants, teamSnapshots, riders, constructors, sport, showToast]);
+    }, [leaderboardView, races, participants, teamSnapshots, riders, constructors, sport, showToast, props.currencyPrefix, props.currencySuffix]);
 
     const handleCopyToClipboard = () => {
         navigator.clipboard.writeText(shareableText).then(() => {

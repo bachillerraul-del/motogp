@@ -1,8 +1,8 @@
 import React from 'react';
 import type { Sport, View } from '../types';
-import { HomeIcon, PlusCircleIcon, TrophyIcon, BookOpenIcon } from './Icons';
+import { HomeIcon, PlusCircleIcon, TrophyIcon, BookOpenIcon, ChartBarIcon } from './Icons';
 
-type NavView = Extract<View, 'home' | 'builder' | 'results' | 'rules'>;
+type NavView = Extract<View, 'home' | 'builder' | 'results' | 'rules' | 'stats'>;
 
 interface BottomNavProps {
     currentView: View;
@@ -50,6 +50,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentView, setView, spor
                 icon={<TrophyIcon className="w-6 h-6" />}
                 isActive={currentView === 'results'}
                 onClick={() => setView('results')}
+                activeColor={activeColor}
+            />
+             <NavItem
+                label="Stats"
+                icon={<ChartBarIcon className="w-6 h-6" />}
+                isActive={currentView === 'stats'}
+                onClick={() => setView('stats')}
                 activeColor={activeColor}
             />
             <NavItem
