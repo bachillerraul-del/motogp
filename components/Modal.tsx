@@ -8,12 +8,17 @@ interface ModalProps {
     title: string;
     children: React.ReactNode;
     sport?: Sport; // Make sport optional for general modals
+    size?: 'md' | 'lg' | 'xl';
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, sport }) => {
+export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, sport, size = 'md' }) => {
     if (!isOpen) return null;
 
-    const titleColor = sport === 'f1' ? 'text-red-600' : 'text-orange-500';
+    const sizeClasses = {
+        md: 'max-w-md',
+        lg: 'max-w-lg',
+        xl: 'max-w-xl',
+    };
 
     return (
         <div 
@@ -24,7 +29,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
             aria-labelledby="modal-title"
         >
             <div 
-                className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md transform transition-all"
+                className={`bg-gray-800 rounded-lg shadow-xl w-full ${sizeClasses[size]} transform transition-all`}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between p-4 border-b border-gray-700">

@@ -5,9 +5,11 @@ import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
 import { Leaderboard } from './Leaderboard';
 import { RiderLeaderboard } from './RiderLeaderboard';
-import { CogIcon } from './Icons';
+import { CogIcon, ClipboardDocumentListIcon } from './Icons';
 import { useFantasy } from '../contexts/FantasyDataContext';
 import { calculateScore } from '../lib/scoreUtils';
+import { getTeamForRace } from '../lib/utils';
+
 
 type RiderWithScore = Rider & { score: number };
 
@@ -42,6 +44,8 @@ export const Results: React.FC<ResultsProps> = (props) => {
     const defaultViewIsSet = useRef(false);
     
     const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [shareableText, setShareableText] = useState('');
     
     const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
     const [isConfirmingClearPoints, setIsConfirmingClearPoints] = useState(false);
@@ -92,6 +96,54 @@ export const Results: React.FC<ResultsProps> = (props) => {
              fetchData();
         }
         setIsConfirmingClearPoints(false);
+    };
+
+    const handleShareSelections = useCallback(() => {
+        if (leaderboardView === 'general') {
+            showToast('Selecciona una jornada específica para compartir.', 'info');
+            return;
+        }
+    
+        const race = races.find(r => r.id === leaderboardView);
+        if (!race) return;
+    
+        const ridersById = new Map(riders.map(r => [r.id, r]));
+        const constructorsById = new Map(constructors.map(c => [c.id, c]));
+    
+        const participantTeams = participants.map(participant => {
+            const { riderIds, constructorId } = getTeamForRace(participant.id, race.id, teamSnapshots);
+            const teamRiders = riderIds.map(id => ridersById.get(id)).filter((r): r is Rider => !!r);
+            const teamConstructor = constructorId ? constructorsById.get(constructorId) : null;
+            return { participant, teamRiders, teamConstructor };
+        }).filter(pt => pt.teamRiders.length > 0 && pt.teamConstructor);
+    
+        const sportName = sport === 'f1' ? 'Fórmula 1' : 'MotoGP';
+        let text = `*Fantasy ${sportName} - Selecciones para ${race.gp_name}* 🏁\n\n`;
+        text += `---------------------------------\n\n`;
+    
+        participantTeams.forEach(({ participant, teamRiders, teamConstructor }) => {
+            text += `*${participant.name}*:\n`;
+            teamRiders.forEach(rider => {
+                text += `  • ${rider.name}\n`;
+            });
+            if (teamConstructor) {
+                text += `  • _${teamConstructor.name} (Escudería)_\n`;
+            }
+            text += '\n';
+        });
+    
+        setShareableText(text);
+        setIsShareModalOpen(true);
+    }, [leaderboardView, races, participants, teamSnapshots, riders, constructors, sport, showToast]);
+
+    const handleCopyToClipboard = () => {
+        navigator.clipboard.writeText(shareableText).then(() => {
+            showToast('Texto copiado al portapapeles.', 'success');
+            setIsShareModalOpen(false);
+        }, (err) => {
+            console.error('Could not copy text: ', err);
+            showToast('Error al copiar el texto.', 'error');
+        });
     };
 
     const confirmDeleteParticipant = () => {
@@ -179,6 +231,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
                         onDeleteParticipant={setParticipantToDelete}
                         onUpdateParticipant={handleUpdateParticipant}
                         teamSnapshots={teamSnapshots}
+                        onShare={handleShareSelections}
                         riders={riders}
                         constructors={constructors}
                         sport={sport}
@@ -240,6 +293,23 @@ export const Results: React.FC<ResultsProps> = (props) => {
                         onBulkUpdatePoints={handleBulkUpdatePoints}
                         showToast={showToast}
                     />
+                </div>
+            </Modal>
+
+            <Modal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} title={`Compartir Selecciones para ${races.find(r => r.id === leaderboardView)?.gp_name}`} sport={sport} size="lg">
+                <div>
+                    <p className="text-sm text-gray-400 mb-2">Copia este texto y pégalo en tu grupo de WhatsApp.</p>
+                    <textarea
+                        readOnly
+                        className="w-full h-64 bg-gray-900 text-gray-300 p-3 rounded-md border border-gray-700 focus:ring-0 focus:outline-none"
+                        value={shareableText}
+                    />
+                    <button
+                        onClick={handleCopyToClipboard}
+                        className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors duration-300 flex items-center justify-center gap-3"
+                    >
+                        <ClipboardDocumentListIcon className="w-6 h-6"/> Copiar Texto
+                    </button>
                 </div>
             </Modal>
         </div>

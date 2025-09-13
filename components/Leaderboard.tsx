@@ -20,6 +20,7 @@ interface LeaderboardProps {
     onDeleteParticipant: (participant: Participant) => void;
     onUpdateParticipant: (participant: Participant) => Promise<void>;
     teamSnapshots: TeamSnapshot[];
+    onShare: () => void;
     riders: Rider[];
     constructors: Constructor[];
     sport: Sport;
@@ -156,7 +157,7 @@ const ExpandedTeamView: React.FC<{
 export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
     const {
         participants, races, leaderboardView, onLeaderboardViewChange, isAdmin,
-        onDeleteParticipant, onUpdateParticipant, teamSnapshots,
+        onDeleteParticipant, onUpdateParticipant, onShare, teamSnapshots,
         riders, constructors, sport, currencyPrefix, currencySuffix, onSelectRider
     } = props;
     
@@ -220,18 +221,25 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
 
     return (
         <div>
-            <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+            <div className="flex flex-wrap justify-between items-center gap-y-2 gap-x-4 mb-4">
                 <h2 className="text-2xl font-bold">{getTitle()}</h2>
-                <select
-                    value={leaderboardView}
-                    onChange={e => onLeaderboardViewChange(e.target.value === 'general' ? 'general' : Number(e.target.value))}
-                    className="bg-gray-800 text-white p-2 rounded-md w-full sm:w-auto"
-                >
-                    <option value="general">Clasificación General</option>
-                    <optgroup label="Por Jornada">
-                        {sortedRaces.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
-                    </optgroup>
-                </select>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <select
+                        value={leaderboardView}
+                        onChange={e => onLeaderboardViewChange(e.target.value === 'general' ? 'general' : Number(e.target.value))}
+                        className="bg-gray-800 text-white p-2 rounded-md w-full"
+                    >
+                        <option value="general">Clasificación General</option>
+                        <optgroup label="Por Jornada">
+                            {sortedRaces.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
+                        </optgroup>
+                    </select>
+                    {leaderboardView !== 'general' && (
+                        <button onClick={onShare} className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors" aria-label="Compartir selecciones de la jornada">
+                            <ShareIcon className="w-5 h-5" />
+                        </button>
+                    )}
+                </div>
             </div>
             <div className="space-y-2">
                 {participants.length === 0 ? (
