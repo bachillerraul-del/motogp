@@ -5,7 +5,7 @@ import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
 import { Leaderboard } from './Leaderboard';
 import { RiderLeaderboard } from './RiderLeaderboard';
-import { CogIcon, UsersIcon, ChartBarIcon } from './Icons';
+import { CogIcon } from './Icons';
 import { useFantasy } from '../contexts/FantasyDataContext';
 import { calculateScore } from '../lib/scoreUtils';
 
@@ -19,12 +19,15 @@ interface ResultsProps {
     currencyPrefix: string;
     currencySuffix: string;
     currentUser: Participant | null;
+    currentRace: Race | null;
     onSelectRider: (rider: Rider) => void;
+    addGeminiParticipant: () => Promise<Participant | null>;
+    onUpdateTeam: (participantId: number, riders: Rider[], constructor: Constructor, raceId: number) => Promise<boolean>;
 }
 
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
-        isAdmin, sport, currentUser, onSelectRider
+        isAdmin, sport, currentUser, currentRace, onSelectRider, addGeminiParticipant, onUpdateTeam
     } = props;
     
     // FIX: Renamed destructured functions to match what useFantasy hook provides (e.g., onUpdateParticipant -> handleUpdateParticipant).
@@ -38,7 +41,6 @@ export const Results: React.FC<ResultsProps> = (props) => {
     const [leaderboardView, setLeaderboardView] = useState<number | 'general'>('general');
     const defaultViewIsSet = useRef(false);
     
-    const [mobileView, setMobileView] = useState<'leaderboard' | 'riders'>('leaderboard');
     const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
     
     const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
@@ -116,15 +118,15 @@ export const Results: React.FC<ResultsProps> = (props) => {
 
         if (leaderboardView === 'general') {
             Object.values(allRiderPoints).forEach(roundPoints => {
-                Object.entries(roundPoints).forEach(([riderId, points]) => {
+                Object.entries(roundPoints).forEach(([riderId, pointsData]) => {
                     const id = parseInt(riderId, 10);
-                    riderScores[id] = (riderScores[id] || 0) + points;
+                    riderScores[id] = (riderScores[id] || 0) + pointsData.total;
                 });
             });
         } else {
             const selectedRoundPoints = allRiderPoints[leaderboardView] || {};
-            Object.entries(selectedRoundPoints).forEach(([riderId, points]) => {
-                riderScores[parseInt(riderId, 10)] = points;
+            Object.entries(selectedRoundPoints).forEach(([riderId, pointsData]) => {
+                riderScores[parseInt(riderId, 10)] = pointsData.total;
             });
         }
 
@@ -140,12 +142,12 @@ export const Results: React.FC<ResultsProps> = (props) => {
         return race ? `Pilotos: ${race.gp_name}` : "Clasificación de Pilotos";
     }, [leaderboardView, races]);
 
-    const mobileTabActiveColor = sport === 'f1' ? 'bg-red-600' : 'bg-orange-500';
+    const [activeTab, setActiveTab] = useState<'participants' | 'riders'>('participants');
 
     return (
-        <div>
-            {isAdmin && (
-                <div className="mb-6">
+        <div className="space-y-6">
+             {isAdmin && (
+                <div className="mb-2">
                     <button
                         onClick={() => setIsAdminPanelOpen(true)}
                         className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300"
@@ -155,46 +157,43 @@ export const Results: React.FC<ResultsProps> = (props) => {
                     </button>
                 </div>
             )}
+            <div className="block sm:hidden">
+                 <select 
+                    value={activeTab} 
+                    onChange={e => setActiveTab(e.target.value as 'participants' | 'riders')}
+                    className="bg-gray-800 text-white p-2 rounded-md w-full"
+                 >
+                     <option value="participants">Clasificación de Participantes</option>
+                     <option value="riders">Clasificación de Pilotos</option>
+                 </select>
+             </div>
 
-            <div className="flex flex-col gap-8">
-                <div className="flex lg:hidden rounded-lg bg-gray-800 p-1 border border-gray-700">
-                    <button onClick={() => setMobileView('leaderboard')} className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'leaderboard' ? `${mobileTabActiveColor} text-white` : 'text-gray-300'}`}>
-                        <UsersIcon className="w-5 h-5" /> Clasificación
-                    </button>
-                    <button onClick={() => setMobileView('riders')} className={`w-1/2 p-2 rounded-md font-semibold text-center transition-colors flex items-center justify-center gap-2 ${mobileView === 'riders' ? `${mobileTabActiveColor} text-white` : 'text-gray-300'}`}>
-                        <ChartBarIcon className="w-5 h-5" /> Pilotos
-                    </button>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                 <div className={`lg:col-span-2 ${activeTab !== 'participants' && 'hidden sm:block'}`}>
+                     <Leaderboard
+                        participants={sortedParticipants}
+                        races={races}
+                        leaderboardView={leaderboardView}
+                        onLeaderboardViewChange={setLeaderboardView}
+                        isAdmin={isAdmin}
+                        onDeleteParticipant={setParticipantToDelete}
+                        onUpdateParticipant={handleUpdateParticipant}
+                        teamSnapshots={teamSnapshots}
+                        riders={riders}
+                        constructors={constructors}
+                        sport={sport}
+                        currencyPrefix={props.currencyPrefix}
+                        currencySuffix={props.currencySuffix}
+                        onSelectRider={onSelectRider}
+                    />
                 </div>
-
-                <div className="lg:flex lg:gap-8">
-                    <div className={`w-full lg:flex-grow ${mobileView === 'leaderboard' ? 'block' : 'hidden'} lg:block`}>
-                        <Leaderboard
-                            participants={sortedParticipants}
-                            races={races}
-                            leaderboardView={leaderboardView}
-                            onLeaderboardViewChange={setLeaderboardView}
-                            isAdmin={isAdmin}
-                            onDeleteParticipant={setParticipantToDelete}
-                            // FIX: Renamed to match function from useFantasy hook.
-                            onUpdateParticipant={handleUpdateParticipant}
-                            allRiderPoints={allRiderPoints}
-                            teamSnapshots={teamSnapshots}
-                            riders={riders}
-                            constructors={constructors}
-                            sport={sport}
-                            currencyPrefix={props.currencyPrefix}
-                            currencySuffix={props.currencySuffix}
-                            onSelectRider={onSelectRider}
-                        />
-                    </div>
-                    <div className={`w-full lg:w-96 ${mobileView === 'riders' ? 'block' : 'hidden'} lg:block`}>
-                        <RiderLeaderboard
-                            riders={sortedRiders}
-                            onSelectRider={onSelectRider}
-                            title={riderLeaderboardTitle}
-                            sport={sport}
-                        />
-                    </div>
+                 <div className={`lg:col-span-1 ${activeTab !== 'riders' && 'hidden sm:block'}`}>
+                     <RiderLeaderboard
+                        riders={sortedRiders}
+                        onSelectRider={onSelectRider}
+                        title={riderLeaderboardTitle}
+                        sport={sport}
+                    />
                 </div>
             </div>
             
@@ -225,11 +224,16 @@ export const Results: React.FC<ResultsProps> = (props) => {
                     <AdminPanel
                         races={races}
                         riders={riders}
+                        constructors={constructors}
+                        participants={participants}
                         riderPoints={allRiderPoints}
                         sport={sport}
                         selectedRace={selectedRaceForEditing}
+                        currentRace={currentRace}
                         onSelectRace={setSelectedRaceForEditing}
                         onClearPoints={() => { setIsConfirmingClearPoints(true); setIsAdminPanelOpen(false); }}
+                        addGeminiParticipant={addGeminiParticipant}
+                        onUpdateTeam={onUpdateTeam}
                         // FIX: Renamed to match functions from useFantasy hook.
                         onUpdateRace={handleUpdateRace}
                         onUpdateRider={handleUpdateRider}

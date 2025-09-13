@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import type { Rider, Participant, Race, TeamSnapshot, Sport, Constructor } from '../types';
-import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon, ShareIcon, ArrowDownTrayIcon, MotoIcon, F1Icon } from './Icons';
+import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon, ShareIcon, ArrowDownTrayIcon, MotoIcon, F1Icon, SparklesIcon, ChevronDownIcon } from './Icons';
 import { getTeamForRace, getLatestTeam } from '../lib/utils';
 import { toPng } from 'html-to-image';
 import { Modal } from './Modal';
 import { CONSTRUCTOR_LIMIT, F1_RIDER_LIMIT, MOTOGP_RIDER_LIMIT } from '../constants';
-
-type AllRiderPoints = Record<number, Record<number, number>>;
+import { calculateScoreBreakdown } from '../lib/scoreUtils';
+import { useFantasy } from '../contexts/FantasyDataContext';
 
 interface ParticipantWithScore extends Participant {
     score: number;
@@ -19,7 +19,6 @@ interface LeaderboardProps {
     isAdmin: boolean;
     onDeleteParticipant: (participant: Participant) => void;
     onUpdateParticipant: (participant: Participant) => Promise<void>;
-    allRiderPoints: AllRiderPoints;
     teamSnapshots: TeamSnapshot[];
     riders: Rider[];
     constructors: Constructor[];
@@ -91,16 +90,79 @@ const ShareTeamCard: React.FC<ShareTeamCardProps> = ({ participant, teamRiders, 
     );
 };
 
+const ExpandedTeamView: React.FC<{
+    participantId: number;
+    raceId: number;
+    onSelectRider: (rider: Rider) => void;
+}> = ({ participantId, raceId, onSelectRider }) => {
+    const { teamSnapshots, allRiderPoints, riders, constructors } = useFantasy();
+    
+    const breakdown = useMemo(() => calculateScoreBreakdown(
+        participantId,
+        raceId,
+        teamSnapshots,
+        allRiderPoints,
+        riders,
+        constructors
+    ), [participantId, raceId, teamSnapshots, allRiderPoints, riders, constructors]);
+
+    const sortedRiderScores = useMemo(() => 
+        [...breakdown.riderScores].sort((a, b) => b.points - a.points), 
+    [breakdown.riderScores]);
+
+    const { constructorData, points: constructorPoints, calculation } = breakdown.constructorScore;
+    
+    return (
+        <div className="bg-gray-900/50 p-3 rounded-b-lg text-sm animate-fadeIn">
+            <h4 className="font-bold text-gray-300 mb-2">Desglose de Puntos</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                    {sortedRiderScores.map(({ rider, points, mainRacePoints, sprintRacePoints }) => (
+                        <div key={rider.id} className="flex justify-between items-center bg-gray-700/60 p-1.5 rounded-md">
+                            <button onClick={() => onSelectRider(rider)} className="text-left group min-w-0">
+                               <p className="font-semibold text-white group-hover:underline truncate text-xs">{rider.name}</p>
+                               {sprintRacePoints > 0 ? (
+                                    <p className="text-gray-400 text-xs truncate" title={`Carrera: ${mainRacePoints} / Sprint: ${sprintRacePoints}`}>
+                                        Carrera: {mainRacePoints} / Sprint: {sprintRacePoints}
+                                    </p>
+                               ) : (
+                                    <p className="text-gray-400 text-xs truncate">{rider.team}</p>
+                               )}
+                            </button>
+                            <span className="font-bold text-yellow-300 ml-2 flex-shrink-0">{points} pts</span>
+                        </div>
+                    ))}
+                </div>
+                <div className="space-y-1.5">
+                    {constructorData ? (
+                         <div className="flex justify-between items-start bg-gray-600/60 p-1.5 rounded-md border-l-2 border-yellow-400 h-full">
+                             <div className="min-w-0">
+                               <p className="font-semibold text-white text-xs truncate">{constructorData.name}</p>
+                               <p className="text-gray-400 text-xs truncate" title={calculation}>Calc: {calculation}</p>
+                            </div>
+                            <span className="font-bold text-yellow-300 ml-2 flex-shrink-0">{constructorPoints.toFixed(1)} pts</span>
+                        </div>
+                    ) : (
+                        <div className="flex justify-center items-center h-full bg-gray-800/50 p-2 rounded-md">
+                            <p className="text-gray-500 text-xs">Sin escudería</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
     const {
         participants, races, leaderboardView, onLeaderboardViewChange, isAdmin,
-        onDeleteParticipant, onUpdateParticipant, allRiderPoints, teamSnapshots,
+        onDeleteParticipant, onUpdateParticipant, teamSnapshots,
         riders, constructors, sport, currencyPrefix, currencySuffix, onSelectRider
     } = props;
     
     const [editingName, setEditingName] = useState<{ id: number; name: string } | null>(null);
     const [sharingTeam, setSharingTeam] = useState<{ participant: Participant, riderIds: number[], constructorId: number | null } | null>(null);
+    const [expandedParticipantId, setExpandedParticipantId] = useState<number | null>(null);
     const cardRef = useRef<HTMLDivElement>(null);
 
     const ridersById = useMemo(() => new Map(riders.map(r => [r.id, r])), [riders]);
@@ -138,8 +200,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
     const getTitle = () => leaderboardView === 'general' ? "Clasificación General" : `Clasificación ${races.find(r => r.id === leaderboardView)?.gp_name || ''}`;
     
     const sortedRaces = [...races].sort((a,b) => a.round - b.round);
-    const RIDER_LIMIT = sport === 'f1' ? F1_RIDER_LIMIT : MOTOGP_RIDER_LIMIT;
-
+    
     const sharingTeamData = useMemo(() => {
         if (!sharingTeam) return null;
         
@@ -158,7 +219,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
 
 
     return (
-        <div className="flex-grow">
+        <div>
             <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
                 <h2 className="text-2xl font-bold">{getTitle()}</h2>
                 <select
@@ -172,134 +233,61 @@ export const Leaderboard: React.FC<LeaderboardProps> = (props) => {
                     </optgroup>
                 </select>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
                 {participants.length === 0 ? (
                     <div className="text-center py-10 bg-gray-800 rounded-lg">
                         <p className="text-gray-400">Aún no hay participantes en la liga.</p>
                     </div>
                 ) : (
                     participants.map((participant, index) => {
-                        const { riderIds, constructorId } = leaderboardView === 'general'
-                            ? getLatestTeam(participant.id, races, teamSnapshots)
-                            : getTeamForRace(participant.id, leaderboardView, teamSnapshots);
-
-                        const riderCost = riderIds.reduce((t, rId) => t + (ridersById.get(rId)?.price || 0), 0);
-                        const constructorCost = (constructorId ? constructorsById.get(constructorId)?.price : 0) || 0;
-                        const teamCost = riderCost + constructorCost;
+                        const isExpanded = expandedParticipantId === participant.id;
+                        const { riderIds, constructorId } = getLatestTeam(participant.id, races, teamSnapshots);
+                        const isGemini = participant.name === 'Gemini AI';
                         
                         return (
-                            <div key={participant.id} className={`bg-gray-800 rounded-lg shadow-lg p-4 transition-all duration-300 ${sport === 'f1' ? 'hover:shadow-red-600/20' : 'hover:shadow-orange-500/20'} ${getRankStyle(index)}`}>
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-2xl w-6 text-center">{getMedal(index) || index + 1}</span>
-                                        {editingName?.id === participant.id ? (
-                                            <input type="text" value={editingName.name} onChange={(e) => setEditingName({ ...editingName, name: e.target.value })} onBlur={() => handleSaveName(participant.id)} onKeyDown={(e) => e.key === 'Enter' && handleSaveName(participant.id)} className="bg-gray-700 text-xl font-bold text-white p-1 rounded-md" autoFocus/>
-                                        ) : (
-                                            <div className="flex items-baseline gap-2 flex-wrap">
-                                                <h3 className="text-xl font-bold text-white">{participant.name}</h3>
-                                                <span className="text-sm text-gray-400 font-mono">({formatPrice(teamCost)})</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className="flex items-center gap-2 bg-yellow-400/10 text-yellow-300 font-bold px-3 py-1 rounded-full">
-                                            <TrophyIcon className="w-5 h-5"/>
-                                            <span>{participant.score} pts</span>
-                                        </div>
-                                         <button onClick={() => setSharingTeam({ participant, riderIds, constructorId })} className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-full transition-colors"><ShareIcon className="w-5 h-5"/></button>
-                                        {isAdmin && (
-                                            <>
+                             <div key={participant.id} className={`bg-gray-800 rounded-lg shadow-md transition-all duration-300 ${getRankStyle(index)}`}>
+                                <div className="p-3 text-left">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3 flex-grow min-w-0">
+                                            <span className="text-xl font-bold w-6 text-center">{getMedal(index) || index + 1}</span>
+                                            <div className="flex-grow min-w-0">
                                                 {editingName?.id === participant.id ? (
-                                                    <button onClick={() => handleSaveName(participant.id)} className="p-2 text-gray-400 hover:text-green-500 hover:bg-gray-700 rounded-full transition-colors"><CheckIcon className="w-5 h-5"/></button>
+                                                    <input type="text" value={editingName.name} onChange={(e) => setEditingName({ ...editingName, name: e.target.value })} onBlur={() => handleSaveName(participant.id)} onKeyDown={(e) => e.key === 'Enter' && handleSaveName(participant.id)} className="bg-gray-700 text-md font-bold text-white p-1 rounded-md w-full" autoFocus/>
                                                 ) : (
-                                                    <button onClick={() => setEditingName({ id: participant.id, name: participant.name })} className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"><PencilIcon className="w-5 h-5"/></button>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="text-md font-bold text-white truncate">{participant.name}</h3>
+                                                        {isGemini && <SparklesIcon className="w-4 h-4 text-blue-400 flex-shrink-0" />}
+                                                    </div>
                                                 )}
-                                                <button onClick={() => onDeleteParticipant(participant)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-gray-700 rounded-full transition-colors"><TrashIcon className="w-5 h-5"/></button>
-                                            </>
-                                        )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                                            <div className="flex items-center gap-2 bg-yellow-400/10 text-yellow-300 font-bold px-3 py-1 rounded-full">
+                                                <TrophyIcon className="w-4 h-4"/>
+                                                <span className="text-sm">{participant.score}</span>
+                                            </div>
+                                            {isAdmin && (
+                                                <div className="hidden sm:flex items-center gap-1">
+                                                    {editingName?.id === participant.id ? (
+                                                        <button onClick={() => handleSaveName(participant.id)} className="p-1.5 text-gray-400 hover:text-green-500 hover:bg-gray-700 rounded-full transition-colors"><CheckIcon className="w-4 h-4"/></button>
+                                                    ) : (
+                                                        <button onClick={() => setEditingName({ id: participant.id, name: participant.name })} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"><PencilIcon className="w-4 h-4"/></button>
+                                                    )}
+                                                    <button onClick={() => onDeleteParticipant(participant)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-gray-700 rounded-full transition-colors"><TrashIcon className="w-4 h-4"/></button>
+                                                </div>
+                                            )}
+                                            <button onClick={() => setSharingTeam({ participant, riderIds, constructorId })} className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-full transition-colors"><ShareIcon className="w-4 h-4"/></button>
+                                             <button onClick={() => setExpandedParticipantId(isExpanded ? null : participant.id)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors">
+                                                <ChevronDownIcon className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="bg-gray-900/50 p-3 rounded-md">
-                                    {leaderboardView === 'general' ? (
-                                        <>
-                                            <p className="text-xs text-gray-400 mb-2 uppercase">Puntuación por Jornada</p>
-                                            {races.length > 0 ? (
-                                                <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
-                                                    {sortedRaces.map(race => {
-                                                        const { riderIds, constructorId } = getTeamForRace(participant.id, race.id, teamSnapshots);
-                                                        const racePointsMap = allRiderPoints[race.id] || {};
-                                                        const riderScore = riderIds.reduce((acc, rId) => acc + (racePointsMap[rId] || 0), 0);
-                                                        let constructorScore = 0;
-                                                        if (constructorId) {
-                                                            const constructor = constructorsById.get(constructorId);
-                                                            if (constructor) {
-                                                                const cPoints = riders.filter(r => {
-                                                                    if (r.constructor_id) {
-                                                                        return r.constructor_id === constructorId;
-                                                                    }
-                                                                    return r.team === constructor.name;
-                                                                }).map(r => racePointsMap[r.id] || 0).sort((a,b)=>b-a);
-                                                                constructorScore = ((cPoints[0] || 0) + (cPoints[1] || 0)) / 2;
-                                                            }
-                                                        }
-                                                        return (
-                                                            <li key={race.id} className="flex justify-between items-baseline">
-                                                                <span className="truncate text-gray-300 mr-2">{race.gp_name}:</span>
-                                                                <span className="font-semibold text-white whitespace-nowrap">{Math.round(riderScore + constructorScore)} pts</span>
-                                                            </li>
-                                                        );
-                                                    })}
-                                                </ul>
-                                            ) : (
-                                                <p className="text-gray-500 text-sm">Aún no se han creado jornadas.</p>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <>
-                                            {(() => {
-                                                const race = races.find(r => r.id === leaderboardView);
-                                                if (!race) return <p className="text-gray-500 text-sm">Jornada no encontrada.</p>;
-                                                
-                                                const { riderIds, constructorId } = getTeamForRace(participant.id, race.id, teamSnapshots);
-                                                const constructor = constructorId ? constructorsById.get(constructorId) : null;
-                                                const roundPointsMap = allRiderPoints[leaderboardView] || {};
-                                                
-                                                const sortedTeam = [...riderIds].sort((a, b) => (roundPointsMap[b] || 0) - (roundPointsMap[a] || 0));
-
-                                                return (
-                                                    <>
-                                                        <p className="text-xs text-gray-400 mb-2 uppercase">Equipo para {race.gp_name} ({riderIds.length}/{RIDER_LIMIT}, {constructor ? '1/1' : '0/1'})</p>
-                                                        {sortedTeam.length > 0 || constructor ? (
-                                                            <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 text-sm">
-                                                                {sortedTeam.map(riderId => {
-                                                                    const rider = ridersById.get(riderId);
-                                                                    return (
-                                                                        <li key={riderId} className="bg-gray-700 p-1.5 rounded-md flex flex-col justify-between">
-                                                                            <button onClick={() => rider && onSelectRider(rider)} className="w-full h-full text-center group">
-                                                                                <p className="truncate font-semibold text-xs leading-tight group-hover:underline">{rider?.name ?? 'N/A'}</p>
-                                                                                <p className="text-yellow-300 font-bold mt-1">{roundPointsMap[riderId] || 0} pts</p>
-                                                                            </button>
-                                                                        </li>
-                                                                    );
-                                                                })}
-                                                                {constructor && (
-                                                                    <li className="bg-gray-600 p-1.5 rounded-md flex flex-col justify-between">
-                                                                        <div className="w-full h-full text-center">
-                                                                            <p className="truncate font-semibold text-xs leading-tight">{constructor.name}</p>
-                                                                            <p className="text-yellow-300 font-bold mt-1">{/* Constructor score could be shown here */}</p>
-                                                                        </div>
-                                                                    </li>
-                                                                )}
-                                                            </ul>
-                                                        ) : (
-                                                            <p className="text-gray-500 text-sm">No se encontró un equipo guardado para esta jornada.</p>
-                                                        )}
-                                                    </>
-                                                );
-                                            })()}
-                                        </>
-                                    )}
-                                </div>
+                                {isExpanded && (
+                                    leaderboardView === 'general'
+                                    ? <div className="p-3 bg-gray-900/50 rounded-b-lg text-center text-sm text-gray-400">Selecciona una jornada para ver el desglose de puntos.</div>
+                                    : <ExpandedTeamView participantId={participant.id} raceId={leaderboardView} onSelectRider={onSelectRider} />
+                                )}
                             </div>
                         )
                     })

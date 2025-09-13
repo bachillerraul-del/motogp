@@ -38,10 +38,11 @@ export const ConstructorStats: React.FC<ConstructorStatsProps> = ({ constructorI
         }).map(r => r.id));
     }, [riders, constructorItem]);
 
-    const calculateConstructorScoreForRace = (racePoints: Record<number, number>): number => {
+    // FIX: Changed parameter type to handle RiderRoundPoints object and map to total points.
+    const calculateConstructorScoreForRace = (racePoints: Record<number, { total: number }>): number => {
         const constructorRiderPointsForRace = Object.entries(racePoints)
             .filter(([riderId]) => constructorRiderIds.has(Number(riderId)))
-            .map(([, points]) => points)
+            .map(([, points]) => points.total)
             .sort((a, b) => b - a);
 
         if (constructorRiderPointsForRace.length === 0) return 0;

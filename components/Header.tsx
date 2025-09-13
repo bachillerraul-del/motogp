@@ -22,8 +22,6 @@ export const Header: React.FC<HeaderProps> = ({ currentView, isAdmin, onAdminLog
         builder: 'Crear Equipo',
         results: 'Resultados',
         rules: 'Reglas del Juego',
-        riderDetail: 'Detalles del Piloto',
-        constructorDetail: 'Detalles de Escudería'
     };
 
     return (

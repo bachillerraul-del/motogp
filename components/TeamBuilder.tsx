@@ -30,12 +30,13 @@ interface TeamBuilderProps {
     currencySuffix: string;
     sport: Sport;
     onSelectRider: (rider: Rider) => void;
+    onSelectConstructor: (constructor: Constructor) => void;
 }
 
 export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
     const {
         onUpdateTeam, currentRace, currentUser,
-        BUDGET, RIDER_LIMIT, CONSTRUCTOR_LIMIT, currencyPrefix, currencySuffix, sport, onSelectRider
+        BUDGET, RIDER_LIMIT, CONSTRUCTOR_LIMIT, currencyPrefix, currencySuffix, sport, onSelectRider, onSelectConstructor
     } = props;
     
     const { riders, constructors, races, teamSnapshots, showToast, participants } = useFantasy();
@@ -52,7 +53,6 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
     const [selectedConstructor, setSelectedConstructor] = useState<Constructor | null>(initialTeam.initialConstructor);
     const [isTeamSheetOpen, setIsTeamSheetOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'riders' | 'constructors'>('riders');
-    const [viewingConstructor, setViewingConstructor] = useState<Constructor | null>(null);
     const [saveState, setSaveState] = useState<SaveState>('idle');
     const isInitialMount = useRef(true);
     const saveStateResetTimer = useRef<number | null>(null);
@@ -175,7 +175,7 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
         }
     };
 
-    const handleSelectConstructor = (constructor: Constructor) => {
+    const handleToggleConstructor = (constructor: Constructor) => {
         if (selectedConstructor?.id === constructor.id) {
             setSelectedConstructor(null);
         } else {
@@ -242,8 +242,8 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
                     <ConstructorCard
                         key={c.id}
                         constructorItem={c}
-                        onAdd={handleSelectConstructor}
-                        onSelect={setViewingConstructor}
+                        onAdd={handleToggleConstructor}
+                        onSelect={onSelectConstructor}
                         isSelected={selectedConstructor?.id === c.id}
                         isAffordable={remainingBudget >= c.price || selectedConstructor?.id === c.id}
                         priceChange={c.price - c.initial_price}
@@ -308,22 +308,6 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
                          </div>
                     </div>
                  </>
-            )}
-
-            {viewingConstructor && (
-                <Modal 
-                    isOpen={!!viewingConstructor} 
-                    onClose={() => setViewingConstructor(null)}
-                    title={`Estadísticas: ${viewingConstructor.name}`}
-                    sport={sport}
-                >
-                    <ConstructorStats 
-                        constructorItem={viewingConstructor}
-                        sport={sport}
-                        currencyPrefix={currencyPrefix}
-                        currencySuffix={currencySuffix}
-                    />
-                </Modal>
             )}
         </div>
     );

@@ -1,7 +1,6 @@
-
 // FIX: Corrected typo from 'motogogp' to 'motogp'.
 export type Sport = 'motogp' | 'f1';
-export type View = 'home' | 'builder' | 'results' | 'rules' | 'riderDetail' | 'constructorDetail';
+export type View = 'home' | 'builder' | 'results' | 'rules';
 
 export interface Rider {
     id: number;
@@ -49,5 +48,9 @@ export type TeamSelection = {
     constructorId: number | null;
 };
 
-export type RiderRoundPoints = number;
+export type RiderRoundPoints = {
+    total: number;
+    main: number;
+    sprint: number;
+};
 export type AllRiderPoints = Record<number, Record<number, RiderRoundPoints>>;

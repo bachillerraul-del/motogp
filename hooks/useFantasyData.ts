@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import type { Sport, Participant, Race, Rider, TeamSnapshot, AllRiderPoints, Constructor } from '../types';
+import type { Sport, Participant, Race, Rider, TeamSnapshot, AllRiderPoints, Constructor, RiderRoundPoints } from '../types';
 
 // FIX: Added 'info' to the toast message types to support informational messages.
 type ToastMessage = { id: number; message: string; type: 'success' | 'error' | 'info' };
@@ -90,11 +90,16 @@ export const useFantasyData = (sport: Sport | null) => {
             setConstructors(processedConstructors);
             
             const pointsMap: AllRiderPoints = {};
-            (pointsData || []).forEach(p => {
+            (pointsData || []).forEach((p: any) => {
                 if (!pointsMap[p.round_id]) {
                     pointsMap[p.round_id] = {};
                 }
-                pointsMap[p.round_id][p.rider_id] = p.points;
+                pointsMap[p.round_id][p.rider_id] = {
+                    total: p.points || 0,
+                    // Fallback for old data that doesn't have breakdown
+                    main: p.main_race_points ?? p.points ?? 0,
+                    sprint: p.sprint_race_points ?? 0,
+                };
             });
             setAllRiderPoints(pointsMap);
 
@@ -117,7 +122,7 @@ export const useFantasyData = (sport: Sport | null) => {
     const addParticipant = async (name: string): Promise<Participant | null> => {
         const { data: newParticipantData, error: participantError } = await supabase
             .from('participants')
-            .insert({ name })
+            .insert({ name, team_ids: [] })
             .select()
             .single();
 
@@ -131,6 +136,26 @@ export const useFantasyData = (sport: Sport | null) => {
         await fetchData();
         return newParticipantData;
     };
+
+    const addGeminiParticipant = async (): Promise<Participant | null> => {
+        const existingGemini = participants.find(p => p.name === 'Gemini AI');
+        if (existingGemini) {
+            showToast('El participante "Gemini AI" ya existe.', 'info');
+            return existingGemini;
+        }
+    
+        const { data, error } = await supabase.from('participants').insert({ name: 'Gemini AI', team_ids: [] }).select().single();
+        if (error) {
+            showToast('Error al añadir a Gemini AI a la liga.', 'error');
+            console.error(error);
+            return null;
+        }
+        
+        showToast('¡Gemini AI se ha unido a la liga!', 'success');
+        await fetchData();
+        return data;
+    };
+
 
     const handleUpdateParticipantTeam = useCallback(async (participantId: number, riders: Rider[], constructor: Constructor, raceId: number): Promise<boolean> => {
         const snapshotTable = sport === 'f1' ? 'f1_team_snapshots' : 'team_snapshots';
@@ -205,21 +230,30 @@ export const useFantasyData = (sport: Sport | null) => {
         }
     };
     
-    const handleBulkUpdatePoints = async (roundId: number, newPoints: Map<number, number>, previousRiderIds: number[]): Promise<void> => {
+    const handleBulkUpdatePoints = async (
+        roundId: number, 
+        newPoints: Map<number, { main: number, sprint: number, total: number }>, 
+        previousRiderIds: number[]
+    ): Promise<void> => {
         const pointTable = sport === 'f1' ? 'f1_rider_points' : 'rider_points';
         
         const ridersToClear = previousRiderIds.filter(id => !newPoints.has(id));
-        const upsertData = Array.from(newPoints.entries()).map(([rider_id, points]) => ({
+        
+        const upsertData = Array.from(newPoints.entries()).map(([rider_id, pointsData]) => ({
             round_id: roundId,
             rider_id,
-            points
+            points: pointsData.total,
+            main_race_points: pointsData.main,
+            sprint_race_points: pointsData.sprint
         }));
         
         if (ridersToClear.length > 0) {
             upsertData.push(...ridersToClear.map(rider_id => ({
                 round_id: roundId,
                 rider_id,
-                points: 0
+                points: 0,
+                main_race_points: 0,
+                sprint_race_points: 0,
             })));
         }
 
@@ -253,6 +287,7 @@ export const useFantasyData = (sport: Sport | null) => {
         showToast,
         fetchData,
         addParticipant,
+        addGeminiParticipant,
         handleUpdateParticipantTeam,
         handleUpdateParticipant,
         handleDeleteParticipant,

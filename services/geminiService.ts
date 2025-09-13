@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Rider, Participant, TeamSnapshot, Sport, Constructor } from '../types';
 
@@ -17,6 +16,11 @@ export interface AIMotogpResult {
 export interface AIF1RacePositionsResult {
     mainRace: { position: number, riderName: string }[];
     sprintRace: { position: number, riderName: string }[];
+}
+
+export interface AITeamSelection {
+    rider_names: string[];
+    constructor_name: string;
 }
 
 
@@ -286,5 +290,101 @@ export async function getAITeamAdvice(
     } catch (error) {
         console.error("Error calling Gemini API for team advice:", error);
         throw new Error("Failed to get team advice from AI.");
+    }
+}
+
+export async function createAITeam(
+    availableRiders: Rider[],
+    availableConstructors: Constructor[],
+    sport: Sport,
+    budget: number,
+    riderLimit: number
+): Promise<{ riders: Rider[]; constructor: Constructor } | null> {
+    const sportContext = {
+        motogp: {
+            name: "MotoGP",
+            currency: "euros",
+            currency_symbol: "€"
+        },
+        f1: {
+            name: "Fórmula 1",
+            currency: "millones de dólares",
+            currency_symbol: "$"
+        }
+    };
+    
+    const ridersList = availableRiders
+        .filter(r => !r.condition?.includes('unavailable') && !r.condition?.includes('injured'))
+        .map(r => `"${r.name}" (Precio: ${r.price})`)
+        .join(', ');
+
+    const constructorsList = availableConstructors
+        .map(c => `"${c.name}" (Precio: ${c.price})`)
+        .join(', ');
+
+    const prompt = `
+        Eres un experto director de equipo de fantasía de ${sportContext[sport].name}. Tu objetivo es crear el equipo más competitivo posible para ganar la liga.
+
+        Reglas:
+        - Debes seleccionar exactamente ${riderLimit} pilotos.
+        - Debes seleccionar exactamente 1 escudería.
+        - El coste total de tu equipo no puede superar los ${budget} ${sportContext[sport].currency}.
+        - Para F1, los precios están multiplicados por 10 (ej. 220 es 22.0M$).
+
+        Listado de Pilotos Disponibles (con sus precios):
+        [${ridersList}]
+
+        Listado de Escuderías Disponibles (con sus precios):
+        [${constructorsList}]
+
+        Analiza todas las opciones y crea el mejor equipo posible que maximice el potencial de puntos sin exceder el presupuesto. Ten en cuenta tanto a los pilotos de élite como a posibles "joyas ocultas" con buena relación calidad-precio.
+
+        Devuelve tu selección final como un objeto JSON. Es crucial que el formato sea exactamente el siguiente y que los nombres coincidan perfectamente con los de las listas proporcionadas:
+        {
+          "rider_names": ["Nombre Piloto 1", "Nombre Piloto 2", "Nombre Piloto 3", "Nombre Piloto 4"],
+          "constructor_name": "Nombre Escudería"
+        }
+    `;
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        rider_names: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING }
+                        },
+                        constructor_name: { type: Type.STRING }
+                    },
+                    required: ["rider_names", "constructor_name"]
+                }
+            }
+        });
+
+        const selection = JSON.parse(response.text.trim()) as AITeamSelection;
+
+        const selectedRiders = selection.rider_names.map(name =>
+            availableRiders.find(r => r.name === name)
+        ).filter((r): r is Rider => !!r);
+
+        const selectedConstructor = availableConstructors.find(c => c.name === selection.constructor_name);
+
+        if (selectedRiders.length !== riderLimit || !selectedConstructor) {
+            console.error("AI returned an invalid team structure.", selection);
+            throw new Error("La IA devolvió una estructura de equipo inválida.");
+        }
+
+        return { riders: selectedRiders, constructor: selectedConstructor };
+
+    } catch (error) {
+        console.error("Error calling Gemini API for team creation:", error);
+        throw new Error("No se pudo generar el equipo con la IA.");
     }
 }

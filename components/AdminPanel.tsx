@@ -1,22 +1,27 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Rider, Race, Sport } from '../types';
+import type { Rider, Race, Sport, Constructor, Participant, RiderRoundPoints } from '../types';
 import { PencilIcon, MagnifyingGlassIcon, SparklesIcon } from './Icons';
 import { Modal } from './Modal';
-import { fetchMotogpRacePositionsFromAI, fetchF1RacePositionsFromAI } from '../services/geminiService';
-import { MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS } from '../constants';
+import { createAITeam, fetchMotogpRacePositionsFromAI, fetchF1RacePositionsFromAI } from '../services/geminiService';
+import { MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS, F1_BUDGET, MOTOGP_BUDGET, F1_RIDER_LIMIT, MOTOGP_RIDER_LIMIT } from '../constants';
 
-type AllRiderPoints = Record<number, Record<number, number>>;
+type AllRiderPoints = Record<number, Record<number, RiderRoundPoints>>;
 
 interface AdminPanelProps {
     races: Race[];
     selectedRace: Race | null;
+    currentRace: Race | null;
     onSelectRace: (race: Race) => void;
     onUpdateRace: (race: Race) => Promise<void>;
     onClearPoints: () => void;
     riders: Rider[];
+    constructors: Constructor[];
+    participants: Participant[];
     riderPoints: AllRiderPoints;
     onUpdateRider: (rider: Rider) => Promise<void>;
-    onBulkUpdatePoints: (roundId: number, newPoints: Map<number, number>, previousRiderIds: number[]) => Promise<void>;
+    onBulkUpdatePoints: (roundId: number, newPoints: Map<number, { main: number, sprint: number, total: number }>, previousRiderIds: number[]) => Promise<void>;
+    addGeminiParticipant: () => Promise<Participant | null>;
+    onUpdateTeam: (participantId: number, riders: Rider[], constructor: Constructor, raceId: number) => Promise<boolean>;
     // FIX: Added 'info' to the toast types to support informational messages.
     showToast: (message: string, type: 'success' | 'error' | 'info') => void;
     sport: Sport;
@@ -34,14 +39,17 @@ const formatDatetimeLocal = (dateStr: string | null | undefined): string => {
 
 export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     const {
-        races, selectedRace, onSelectRace, onUpdateRace, onClearPoints,
-        riders, riderPoints, onUpdateRider, onBulkUpdatePoints, showToast, sport
+        races, selectedRace, currentRace, onSelectRace, onUpdateRace, onClearPoints,
+        riders, constructors, participants, riderPoints, onUpdateRider, onBulkUpdatePoints,
+        addGeminiParticipant, onUpdateTeam, showToast, sport
     } = props;
 
     const [editedRaceDate, setEditedRaceDate] = useState('');
     const [editingRider, setEditingRider] = useState<Rider | null>(null);
     const [riderFormData, setRiderFormData] = useState<Rider | null>(null);
     const [isFetchingPoints, setIsFetchingPoints] = useState(false);
+    const [isGeneratingTeam, setIsGeneratingTeam] = useState(false);
+    const [isAddingGemini, setIsAddingGemini] = useState(false);
     
     // MotoGP specific state
     const [mainRaceResults, setMainRaceResults] = useState<string[]>(Array(15).fill(''));
@@ -214,59 +222,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         showToast(`IA encontró ${foundMain} resultados de carrera y ${foundSprint} de sprint.`, 'success');
     };
 
-    const handleSaveMotoGPResults = async () => {
+    const handleSaveResults = async (
+        mainResults: string[],
+        sprintResults: string[],
+        mainPoints: number[],
+        sprintPoints: number[]
+    ) => {
         if (!selectedRace) return;
 
         setIsSavingResults(true);
-        const pointsMap = new Map<number, number>();
+        const pointsBreakdownMap = new Map<number, { main: number, sprint: number, total: number }>();
 
-        mainRaceResults.forEach((riderIdStr, index) => {
+        const addPoints = (riderId: number, points: number, type: 'main' | 'sprint') => {
+            const current = pointsBreakdownMap.get(riderId) || { main: 0, sprint: 0, total: 0 };
+            if (type === 'main') current.main += points;
+            else current.sprint += points;
+            current.total = current.main + current.sprint;
+            pointsBreakdownMap.set(riderId, current);
+        };
+
+        mainResults.forEach((riderIdStr, index) => {
             if (riderIdStr) {
-                const riderId = parseInt(riderIdStr, 10);
-                const currentPoints = pointsMap.get(riderId) || 0;
-                pointsMap.set(riderId, currentPoints + MOTOGP_MAIN_RACE_POINTS[index]);
+                addPoints(parseInt(riderIdStr, 10), mainPoints[index], 'main');
             }
         });
         
-        sprintRaceResults.forEach((riderIdStr, index) => {
+        sprintResults.forEach((riderIdStr, index) => {
             if (riderIdStr) {
-                const riderId = parseInt(riderIdStr, 10);
-                const currentPoints = pointsMap.get(riderId) || 0;
-                pointsMap.set(riderId, currentPoints + MOTOGP_SPRINT_RACE_POINTS[index]);
+                addPoints(parseInt(riderIdStr, 10), sprintPoints[index], 'sprint');
             }
         });
-        
+
         const previousRiderIds = Object.keys(riderPoints[selectedRace.id] || {}).map(Number);
         
-        await onBulkUpdatePoints(selectedRace.id, pointsMap, previousRiderIds);
-        setIsSavingResults(false);
-    };
-    
-    const handleSaveF1Results = async () => {
-        if (!selectedRace) return;
-
-        setIsSavingResults(true);
-        const pointsMap = new Map<number, number>();
-
-        f1MainRaceResults.forEach((riderIdStr, index) => {
-            if (riderIdStr) {
-                const riderId = parseInt(riderIdStr, 10);
-                const currentPoints = pointsMap.get(riderId) || 0;
-                pointsMap.set(riderId, currentPoints + F1_MAIN_RACE_POINTS[index]);
-            }
-        });
-        
-        f1SprintRaceResults.forEach((riderIdStr, index) => {
-            if (riderIdStr) {
-                const riderId = parseInt(riderIdStr, 10);
-                const currentPoints = pointsMap.get(riderId) || 0;
-                pointsMap.set(riderId, currentPoints + F1_SPRINT_RACE_POINTS[index]);
-            }
-        });
-        
-        const previousRiderIds = Object.keys(riderPoints[selectedRace.id] || {}).map(Number);
-        
-        await onBulkUpdatePoints(selectedRace.id, pointsMap, previousRiderIds);
+        await onBulkUpdatePoints(selectedRace.id, pointsBreakdownMap, previousRiderIds);
         setIsSavingResults(false);
     };
 
@@ -278,7 +267,76 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         button: sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600',
         hoverText: sport === 'f1' ? 'hover:text-red-500' : 'hover:text-orange-500',
     };
+
+    const geminiParticipant = useMemo(() => participants.find(p => p.name === 'Gemini AI'), [participants]);
+
+    const handleGenerateGeminiTeam = async () => {
+        const raceToUse = selectedRace || currentRace;
+        if (!raceToUse || !geminiParticipant) {
+            showToast('Selecciona una jornada o asegúrate de que la próxima carrera esté disponible.', 'error');
+            return;
+        }
+
+        setIsGeneratingTeam(true);
+        try {
+            const budget = sport === 'f1' ? F1_BUDGET : MOTOGP_BUDGET;
+            const riderLimit = sport === 'f1' ? F1_RIDER_LIMIT : MOTOGP_RIDER_LIMIT;
+
+            const aiTeam = await createAITeam(riders, constructors, sport, budget, riderLimit);
+            if (!aiTeam) {
+                throw new Error("La IA no pudo generar un equipo.");
+            }
+
+            const success = await onUpdateTeam(geminiParticipant.id, aiTeam.riders, aiTeam.constructor, raceToUse.id);
+
+            if (success) {
+                showToast(`Equipo generado por IA para ${raceToUse.gp_name} y guardado.`, 'success');
+            } else {
+                 throw new Error("No se pudo guardar el equipo generado por la IA.");
+            }
+
+        } catch (error: any) {
+            showToast(error.message || 'Error al generar el equipo con IA.', 'error');
+        } finally {
+            setIsGeneratingTeam(false);
+        }
+    };
     
+    const handleAddGeminiAndCreateTeam = async () => {
+        if (!currentRace) {
+            showToast('No hay una próxima carrera para la cual crear un equipo.', 'error');
+            return;
+        }
+
+        setIsAddingGemini(true);
+        try {
+            const gemini = await addGeminiParticipant();
+
+            if (gemini) {
+                showToast('Generando equipo para Gemini AI...', 'info');
+                const budget = sport === 'f1' ? F1_BUDGET : MOTOGP_BUDGET;
+                const riderLimit = sport === 'f1' ? F1_RIDER_LIMIT : MOTOGP_RIDER_LIMIT;
+
+                const aiTeam = await createAITeam(riders, constructors, sport, budget, riderLimit);
+                if (!aiTeam) {
+                    throw new Error("La IA no pudo generar un equipo.");
+                }
+
+                const success = await onUpdateTeam(gemini.id, aiTeam.riders, aiTeam.constructor, currentRace.id);
+
+                if (success) {
+                    showToast(`Equipo de Gemini AI para ${currentRace.gp_name} creado y guardado.`, 'success');
+                } else {
+                    throw new Error("No se pudo guardar el equipo generado por la IA.");
+                }
+            }
+        } catch (error: any) {
+            showToast(error.message || 'Ocurrió un error en el proceso.', 'error');
+        } finally {
+            setIsAddingGemini(false);
+        }
+    };
+
     const renderResultSelects = (
         title: string,
         count: number,
@@ -326,6 +384,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
     return (
         <div className="space-y-4">
+            {/* Gemini AI Management */}
+            <div className="border-b border-gray-700 pb-4">
+                <h2 className="text-xl font-bold mb-2">Gestión de Gemini AI</h2>
+                {geminiParticipant ? (
+                    <div className="space-y-2">
+                        <p className="text-sm text-green-400">Gemini AI ya está en la liga.</p>
+                        <button
+                            onClick={handleGenerateGeminiTeam}
+                            disabled={!selectedRace || isGeneratingTeam}
+                            className={`w-full flex items-center justify-center gap-2 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}
+                        >
+                             {isGeneratingTeam ? (
+                                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            ) : (
+                                <SparklesIcon className="w-5 h-5" />
+                            )}
+                            {isGeneratingTeam ? 'Generando Equipo...' : `Generar Equipo para ${selectedRace?.gp_name || 'Jornada Sel.'}`}
+                        </button>
+                    </div>
+                ) : (
+                     <button
+                        onClick={handleAddGeminiAndCreateTeam}
+                        disabled={isAddingGemini}
+                        className={`w-full flex items-center justify-center gap-2 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}
+                    >
+                        {isAddingGemini ? (
+                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : (
+                             <SparklesIcon className="w-5 h-5" />
+                        )}
+                        {isAddingGemini ? 'Añadiendo y Creando Equipo...' : 'Añadir a Gemini AI y Crear Equipo'}
+                    </button>
+                )}
+            </div>
+
             {/* Rider Editor */}
             <div>
                 <h2 className="text-xl font-bold mb-2">Editar Pilotos</h2>
@@ -402,7 +501,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             {renderResultSelects("Carrera Principal (Top 15)", 15, mainRaceResults, setMainRaceResults)}
                             {renderResultSelects("Carrera Sprint (Top 9)", 9, sprintRaceResults, setSprintRaceResults)}
                             <button
-                                onClick={handleSaveMotoGPResults}
+                                onClick={() => handleSaveResults(mainRaceResults, sprintRaceResults, MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS)}
                                 disabled={!selectedRace || isSavingResults}
                                 className={`w-full mt-4 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}
                             >
@@ -415,7 +514,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             {renderResultSelects("Carrera Principal (Top 10)", 10, f1MainRaceResults, setF1MainRaceResults)}
                             {renderResultSelects("Carrera Sprint (Top 8)", 8, f1SprintRaceResults, setF1SprintRaceResults)}
                             <button
-                                onClick={handleSaveF1Results}
+                                onClick={() => handleSaveResults(f1MainRaceResults, f1SprintRaceResults, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS)}
                                 disabled={!selectedRace || isSavingResults}
                                 className={`w-full mt-4 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}
                             >

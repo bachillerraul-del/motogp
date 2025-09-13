@@ -11,6 +11,8 @@ import { MotoIcon, F1Icon } from './components/Icons';
 import { BottomNav } from './components/BottomNav';
 import { FantasyDataProvider, useFantasy } from './contexts/FantasyDataContext';
 import { processPriceAdjustments } from './services/leagueService';
+import { RiderDetailModal } from './components/RiderDetailModal';
+import { ConstructorDetailModal } from './components/ConstructorDetailModal';
 
 
 const Home = lazy(() => import('./components/Home').then(module => ({ default: module.Home })));
@@ -18,8 +20,6 @@ const TeamBuilder = lazy(() => import('./components/TeamBuilder').then(module =>
 const Results = lazy(() => import('./components/Results').then(module => ({ default: module.Results })));
 const Login = lazy(() => import('./components/Login').then(module => ({ default: module.Login })));
 const Rules = lazy(() => import('./components/Rules').then(module => ({ default: module.Rules })));
-const RiderDetail = lazy(() => import('./components/RiderDetail').then(module => ({ default: module.RiderDetail })));
-const ConstructorDetail = lazy(() => import('./components/ConstructorDetail').then(module => ({ default: module.ConstructorDetail })));
 
 
 const SportSelector: React.FC<{ onSelect: (sport: Sport) => void }> = ({ onSelect }) => (
@@ -62,9 +62,8 @@ const LoadingSpinner: React.FC<{ message: string, sport: Sport | null }> = ({ me
 // FIX: Correctly type `setSport` to accept a state updater function.
 const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateAction<Sport | null>> }> = ({ sport, setSport }) => {
     const [view, setView] = useState<View>('home');
-    const [previousView, setPreviousView] = useState<View>('home');
-    const [selectedRider, setSelectedRider] = useState<Rider | null>(null);
-    const [selectedConstructor, setSelectedConstructor] = useState<Constructor | null>(null);
+    const [viewingRider, setViewingRider] = useState<Rider | null>(null);
+    const [viewingConstructor, setViewingConstructor] = useState<Constructor | null>(null);
 
     const [session, setSession] = useState<Session | null>(null);
     const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -77,7 +76,7 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
     
     const {
         participants, races, teamSnapshots, riders, constructors, loading, toast, setToast,
-        showToast, fetchData, addParticipant, handleUpdateParticipantTeam
+        showToast, fetchData, addParticipant, addGeminiParticipant, handleUpdateParticipantTeam
     } = useFantasy();
 
     const constants = useMemo(() => {
@@ -192,24 +191,13 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
         setSport(prevSport => (prevSport === 'motogp' ? 'f1' : 'motogp'));
         setView('home');
     };
-
-    const handleSelectRider = useCallback((rider: Rider) => {
-        setPreviousView(view);
-        setSelectedRider(rider);
-        setView('riderDetail');
-    }, [view]);
     
-    const handleSelectConstructor = useCallback((constructor: Constructor) => {
-        setPreviousView(view);
-        setSelectedConstructor(constructor);
-        setView('constructorDetail');
-    }, [view]);
-
-    const handleBack = useCallback(() => {
-        setView(previousView);
-        setSelectedRider(null);
-        setSelectedConstructor(null);
-    }, [previousView]);
+    const handleSelectRiderForDetail = useCallback((rider: Rider) => setViewingRider(rider), []);
+    const handleSelectConstructorForDetail = useCallback((constructor: Constructor) => setViewingConstructor(constructor), []);
+    const handleCloseDetailModal = useCallback(() => {
+        setViewingRider(null);
+        setViewingConstructor(null);
+    }, []);
 
     if (loading) {
         return <LoadingSpinner message="Cargando datos de la liga..." sport={sport} />;
@@ -263,7 +251,8 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
                                     currencyPrefix={constants.CURRENCY_PREFIX}
                                     currencySuffix={constants.CURRENCY_SUFFIX}
                                     sport={sport}
-                                    onSelectRider={handleSelectRider}
+                                    onSelectRider={handleSelectRiderForDetail}
+                                    onSelectConstructor={handleSelectConstructorForDetail}
                                 />
                             )}
                             {view === 'results' && (
@@ -275,33 +264,39 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
                                     currencyPrefix={constants.CURRENCY_PREFIX}
                                     currencySuffix={constants.CURRENCY_SUFFIX}
                                     currentUser={currentUser}
-                                    onSelectRider={handleSelectRider}
+                                    currentRace={currentRace}
+                                    onSelectRider={handleSelectRiderForDetail}
+                                    addGeminiParticipant={addGeminiParticipant}
+                                    onUpdateTeam={handleUpdateParticipantTeam}
                                 />
                             )}
                             {view === 'rules' && <Rules sport={sport}/>}
-                            {view === 'riderDetail' && selectedRider && (
-                                <RiderDetail
-                                    rider={selectedRider}
-                                    sport={sport}
-                                    onBack={handleBack}
-                                    currencyPrefix={constants.CURRENCY_PREFIX}
-                                    currencySuffix={constants.CURRENCY_SUFFIX}
-                                />
-                            )}
-                             {view === 'constructorDetail' && selectedConstructor && (
-                                <ConstructorDetail
-                                    constructorItem={selectedConstructor}
-                                    sport={sport}
-                                    onBack={handleBack}
-                                    currencyPrefix={constants.CURRENCY_PREFIX}
-                                    currencySuffix={constants.CURRENCY_SUFFIX}
-                                />
-                            )}
                         </Suspense>
                     </main>
                     <BottomNav currentView={view} setView={setView} sport={sport} />
                 </>
             )}
+
+            {viewingRider && (
+                <RiderDetailModal 
+                    rider={viewingRider}
+                    sport={sport}
+                    onClose={handleCloseDetailModal}
+                    currencyPrefix={constants.CURRENCY_PREFIX}
+                    currencySuffix={constants.CURRENCY_SUFFIX}
+                />
+            )}
+            
+            {viewingConstructor && (
+                 <ConstructorDetailModal
+                    constructorItem={viewingConstructor}
+                    sport={sport}
+                    onClose={handleCloseDetailModal}
+                    currencyPrefix={constants.CURRENCY_PREFIX}
+                    currencySuffix={constants.CURRENCY_SUFFIX}
+                />
+            )}
+
 
             <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Login" sport={sport}>
                 <form onSubmit={handleLogin} className="space-y-4">
