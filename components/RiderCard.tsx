@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Rider, Sport } from '../types';
-import { PlusIcon, ArrowUpIcon, ArrowDownIcon, CheckIcon } from './Icons';
+import { PlusIcon, ArrowUpIcon, ArrowDownIcon, CheckIcon, RemoveIcon } from './Icons';
 
 interface RiderCardProps {
     rider: Rider;
@@ -25,7 +25,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
     }
 
     const getButtonText = () => {
-        if (isInTeam) return 'En tu Equipo';
+        if (isInTeam) return 'Quitar del Equipo';
         if (!isSelectable) return 'No Disponible';
         if (isRiderTeamFull) return 'Equipo Lleno';
         if (!isAffordable) return 'Excede Presupuesto';
@@ -47,7 +47,7 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
                 </p>
             );
         }
-        return null;
+        return <div className="mb-4 h-5"></div>; // Placeholder to maintain height
     };
 
     const buttonTheme = sport === 'f1'
@@ -87,15 +87,15 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
             </div>
             <button
                 onClick={() => onAdd(rider)}
-                disabled={isInTeam || isRiderTeamFull || !isSelectable || !isAffordable}
-                className={`mt-4 w-full flex items-center justify-center text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300
+                disabled={!isInTeam && (isRiderTeamFull || !isSelectable || !isAffordable)}
+                className={`mt-auto w-full flex items-center justify-center text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300
                     ${isInTeam
-                        ? 'bg-green-600 disabled:opacity-75 cursor-default'
+                        ? 'bg-fuchsia-600 hover:bg-fuchsia-700'
                         : `${buttonTheme} disabled:bg-gray-600 disabled:cursor-not-allowed`
                     }
                 `}
             >
-                {isInTeam ? <CheckIcon className="w-5 h-5 mr-2" /> : <PlusIcon className="w-5 h-5 mr-2" />}
+                {isInTeam ? <RemoveIcon className="w-5 h-5 mr-2" /> : <PlusIcon className="w-5 h-5 mr-2" />}
                 {getButtonText()}
             </button>
         </div>

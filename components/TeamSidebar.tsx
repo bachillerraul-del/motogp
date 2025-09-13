@@ -50,31 +50,19 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
         const value = currencySuffix === 'M' ? (price / 10).toFixed(1) : price.toLocaleString('es-ES');
         return `${currencyPrefix}${value}${currencySuffix}`;
     }
+    
+    const renderStatusFooter = () => {
+        if (saveState === 'saving') return <div className="flex items-center justify-center gap-2 text-center text-sm text-yellow-400 p-3 bg-yellow-500/10 rounded-lg"><ArrowPathIcon className="w-4 h-4 animate-spin" /> Guardando...</div>;
+        if (saveState === 'saved') return <div className="flex items-center justify-center gap-2 text-center text-sm text-green-400 p-3 bg-green-500/10 rounded-lg animate-fadeIn"><CheckIcon className="w-4 h-4" /> Equipo guardado</div>;
+        if (saveState === 'error') return <div className="flex items-center justify-center gap-2 text-center text-sm text-red-500 p-3 bg-red-500/10 rounded-lg"><ExclamationTriangleIcon className="w-4 h-4" /> Error al guardar</div>;
 
-    const renderBudgetStatus = () => {
-        const remainingStyle = isBudgetExceeded ? "text-red-500 font-bold animate-pulse" : "text-green-400 font-bold";
-        return (
-            <div className="bg-gray-900/50 p-4 rounded-lg">
-                <div className="flex justify-between items-baseline mb-1">
-                    <span className="text-gray-400">Presupuesto Total:</span>
-                    <span className="font-semibold text-white">{formatPrice(budget)}</span>
-                </div>
-                <div className="flex justify-between items-baseline">
-                    <span className="text-gray-400">Restante:</span>
-                    <span className={remainingStyle}>{formatPrice(remainingBudget)}</span>
-                </div>
-            </div>
-        );
-    };
-
-    const renderValidationMessage = () => {
-        const messages = [];
+        const validationMessages = [];
         if (!isRiderTeamFull) {
             const ridersNeeded = riderLimit - riders.length;
-            messages.push(`Debes seleccionar ${ridersNeeded} piloto${ridersNeeded > 1 ? 's' : ''} más.`);
+            validationMessages.push(`Falta${ridersNeeded > 1 ? 'n' : ''} ${ridersNeeded} piloto${ridersNeeded > 1 ? 's' : ''}.`);
         }
         if (!isConstructorTeamFull) {
-            messages.push(`Debes seleccionar ${constructorLimit} escudería.`);
+            validationMessages.push(`Falta ${constructorLimit} escudería.`);
         }
         if (isBudgetExceeded) {
              return (
@@ -84,39 +72,26 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
                 </div>
             );
         }
-        if(messages.length > 0) {
+        if(validationMessages.length > 0) {
             return (
                 <div className="flex items-center gap-2 text-yellow-400 bg-yellow-400/10 p-3 rounded-lg text-sm">
                     <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
-                    <span>{messages.join(' ')}</span>
+                    <span>{validationMessages.join(' ')}</span>
                 </div>
             )
         }
-        return null;
-    };
-    
-    const renderSaveStatus = () => {
-        switch (saveState) {
-            case 'saving':
-                return <div className="flex items-center justify-center gap-2 text-center text-sm text-yellow-400 p-3 bg-yellow-500/10 rounded-lg"><ArrowPathIcon className="w-4 h-4 animate-spin" /> Guardando...</div>;
-            case 'saved':
-                return <div className="flex items-center justify-center gap-2 text-center text-sm text-green-400 p-3 bg-green-500/10 rounded-lg"><CheckIcon className="w-4 h-4" /> Equipo guardado</div>;
-            case 'error':
-                return <div className="flex items-center justify-center gap-2 text-center text-sm text-red-500 p-3 bg-red-500/10 rounded-lg"><ExclamationTriangleIcon className="w-4 h-4" /> Error al guardar</div>;
-            case 'idle':
-            default:
-                if (isTeamValid) {
-                     return <div className="flex items-center justify-center gap-2 text-center text-sm text-green-400 p-3 bg-green-500/10 rounded-lg"><CheckIcon className="w-4 h-4" /> ¡Equipo listo!</div>;
-                }
-                return <div className="p-3 h-[40px]"></div>; // Placeholder
+        
+        if (isTeamValid) {
+             return <div className="flex items-center justify-center gap-2 text-center text-sm text-green-400 p-3 bg-green-500/10 rounded-lg"><CheckIcon className="w-4 h-4" /> ¡Equipo listo para competir!</div>;
         }
-    };
 
+        return null; // Should not be reached if logic is correct
+    };
 
     const teamNameColor = sport === 'f1' ? 'text-red-600' : 'text-orange-500';
 
     return (
-        <aside className="bg-gray-800 p-4 rounded-lg shadow-lg relative space-y-4">
+        <aside className="bg-gray-800 p-4 rounded-lg shadow-lg relative flex flex-col h-full">
              {onClose && (
                 <button
                     onClick={onClose}
@@ -126,13 +101,11 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
                     <XCircleIcon className="w-6 h-6" />
                 </button>
             )}
-            <h2 className="text-2xl font-bold text-center border-b border-gray-700 pb-3">
+            <h2 className="text-2xl font-bold text-center border-b border-gray-700 pb-3 mb-3">
                 Tu Equipo: <span className={teamNameColor}>{teamName}</span>
             </h2>
             
-            {renderBudgetStatus()}
-
-            <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-2">
+            <div className="space-y-2 overflow-y-auto pr-2 flex-grow mb-3">
                 {riders.length > 0 ? (
                     riders.map(rider => (
                         <div key={rider.id} className="bg-gray-700/50 p-2 rounded-md flex justify-between items-center animate-fadeIn">
@@ -150,7 +123,7 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
                         </div>
                     ))
                 ) : (
-                    <div className="text-center py-4 text-gray-500">
+                     <div className="flex items-center justify-center h-full text-center text-gray-500">
                         <p className="text-sm">Selecciona pilotos de la lista.</p>
                     </div>
                 )}
@@ -171,23 +144,29 @@ export const TeamSidebar: React.FC<TeamSidebarProps> = ({
                 )}
             </div>
 
-            <div className="border-t border-gray-700 pt-4 space-y-2">
-                <div className="flex justify-between items-center text-lg">
-                    <span className="font-semibold text-gray-300">Pilotos:</span>
-                    <span className={`font-bold ${isRiderTeamFull ? 'text-green-400' : 'text-yellow-400'}`}>
-                        {riders.length}/{riderLimit}
-                    </span>
+            <div className="border-t border-gray-700 pt-3 space-y-3 mt-auto">
+                 <div className="bg-gray-900/50 p-3 rounded-lg flex justify-between items-center text-sm">
+                    <div className="text-center">
+                        <span className="font-semibold text-gray-300">Pilotos</span>
+                        <p className={`font-bold ${isRiderTeamFull ? 'text-green-400' : 'text-yellow-400'}`}>
+                            {riders.length}/{riderLimit}
+                        </p>
+                    </div>
+                    <div className="text-center">
+                        <span className="font-semibold text-gray-300">Escudería</span>
+                         <p className={`font-bold ${isConstructorTeamFull ? 'text-green-400' : 'text-yellow-400'}`}>
+                            {constructor ? 1 : 0}/{constructorLimit}
+                        </p>
+                    </div>
+                    <div className="text-center">
+                        <span className="font-semibold text-gray-300">Restante</span>
+                        <p className={`font-bold ${isBudgetExceeded ? 'text-red-500' : 'text-green-400'}`}>
+                           {formatPrice(remainingBudget)}
+                        </p>
+                    </div>
                 </div>
-                 <div className="flex justify-between items-center text-lg">
-                    <span className="font-semibold text-gray-300">Escudería:</span>
-                    <span className={`font-bold ${isConstructorTeamFull ? 'text-green-400' : 'text-yellow-400'}`}>
-                        {constructor ? 1 : 0}/{constructorLimit}
-                    </span>
-                </div>
-                {renderValidationMessage()}
+                {renderStatusFooter()}
             </div>
-            
-            {renderSaveStatus()}
         </aside>
     );
 };

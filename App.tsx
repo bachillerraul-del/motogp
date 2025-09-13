@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useMemo, Suspense, lazy } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
@@ -247,6 +246,7 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
                             {view === 'home' && (
                                 <Home 
                                     onGoToBuilder={() => setView('builder')}
+                                    onGoToResults={() => setView('results')}
                                     sport={sport}
                                     currentUser={currentUser}
                                     currentRace={currentRace}
