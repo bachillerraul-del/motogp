@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Rider, Race, Sport, Constructor, Participant, RiderRoundPoints } from '../types';
-import { PencilIcon, MagnifyingGlassIcon, SparklesIcon, PlusIcon } from './Icons';
+import { PencilIcon, MagnifyingGlassIcon, SparklesIcon, PlusIcon, CalendarIcon, UsersIcon } from './Icons';
 import { EditRiderModal } from './EditRiderModal';
 import { createAITeam, fetchMotogpRacePositionsFromAI, fetchF1RacePositionsFromAI } from '../services/geminiService';
 import { MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS, F1_BUDGET, MOTOGP_BUDGET, F1_RIDER_LIMIT, MOTOGP_RIDER_LIMIT } from '../constants';
@@ -59,15 +59,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
     useEffect(() => {
         setEditedRaceDate(formatDatetimeLocal(selectedRace?.race_date));
-         if(sport === 'motogp') {
-            setMainRaceResults(Array(15).fill(''));
-            setSprintRaceResults(Array(9).fill(''));
-        } else if (sport === 'f1') {
-            setF1MainRaceResults(Array(10).fill(''));
-            setF1SprintRaceResults(Array(8).fill(''));
-        }
-    }, [selectedRace, sport]);
 
+        const mainPointsSystem = sport === 'f1' ? F1_MAIN_RACE_POINTS : MOTOGP_MAIN_RACE_POINTS;
+        const sprintPointsSystem = sport === 'f1' ? F1_SPRINT_RACE_POINTS : MOTOGP_SPRINT_RACE_POINTS;
+        const mainResultsSetter = sport === 'f1' ? setF1MainRaceResults : setMainRaceResults;
+        const sprintResultsSetter = sport === 'f1' ? setF1SprintRaceResults : setSprintRaceResults;
+        
+        const newMainResults = Array(mainPointsSystem.length).fill('');
+        const newSprintResults = Array(sprintPointsSystem.length).fill('');
+
+        if (selectedRace && riderPoints[selectedRace.id]) {
+            const savedPoints = riderPoints[selectedRace.id];
+            
+            const mainPointsToPos: { [key: number]: number } = {};
+            mainPointsSystem.forEach((p, i) => { if (p > 0) mainPointsToPos[p] = i; });
+            
+            const sprintPointsToPos: { [key: number]: number } = {};
+            sprintPointsSystem.forEach((p, i) => { if (p > 0) sprintPointsToPos[p] = i; });
+
+            Object.entries(savedPoints).forEach(([riderId, pointsData]) => {
+                if (pointsData.main > 0 && mainPointsToPos[pointsData.main] !== undefined) {
+                    const pos = mainPointsToPos[pointsData.main];
+                    if (newMainResults[pos] === '') newMainResults[pos] = riderId;
+                }
+                if (pointsData.sprint > 0 && sprintPointsToPos[pointsData.sprint] !== undefined) {
+                    const pos = sprintPointsToPos[pointsData.sprint];
+                    if (newSprintResults[pos] === '') newSprintResults[pos] = riderId;
+                }
+            });
+        }
+        
+        mainResultsSetter(newMainResults);
+        sprintResultsSetter(newSprintResults);
+
+    }, [selectedRace, sport, riderPoints]);
+    
     const handleRaceDateChange = () => {
         if (!selectedRace) return;
         const newDate = editedRaceDate ? new Date(editedRaceDate).toISOString() : null;
@@ -122,8 +148,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         }
 
         const riderNameMap = new Map(riders.map(r => [normalizeString(r.name), r]));
-        const newMainResults = Array(15).fill('');
-        const newSprintResults = Array(9).fill('');
+        const newMainResults = [...mainRaceResults];
+        const newSprintResults = [...sprintRaceResults];
         let foundMain = 0;
         let foundSprint = 0;
 
@@ -160,8 +186,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         }
 
         const riderNameMap = new Map(riders.map(r => [normalizeString(r.name), r]));
-        const newMainResults = Array(10).fill('');
-        const newSprintResults = Array(8).fill('');
+        const newMainResults = [...f1MainRaceResults];
+        const newSprintResults = [...f1SprintRaceResults];
         let foundMain = 0;
         let foundSprint = 0;
 
@@ -290,12 +316,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         const selectedIds = new Set(results.filter(Boolean));
         return (
             <div className="space-y-3">
-                 <h3 className="text-lg font-bold text-gray-200">{title}</h3>
+                 <h3 className="text-md font-bold text-gray-200">{title}</h3>
                 {Array.from({ length: count }).map((_, i) => {
                     const currentSelection = results[i];
                     return (
                         <div key={i} className="flex items-center gap-2">
-                            <label className="w-10 text-right text-gray-400 font-semibold">{i + 1}º</label>
+                            <label className="w-10 text-right text-gray-400 font-semibold text-sm">{i + 1}º</label>
                             <select value={currentSelection} onChange={(e) => handleSelectChange(i, e.target.value)} className={`w-full bg-gray-700 text-white p-1 rounded-md text-sm focus:outline-none focus:ring-1 ${theme.focusRing}`}>
                                 <option value="">- Seleccionar piloto -</option>
                                 {sortedRiders.map(r => (
@@ -314,15 +340,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     return (
         <div className="space-y-4">
              <div className="flex border-b border-gray-700">
-                <button onClick={() => setActiveTab('races')} className={`py-2 px-4 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'races' ? theme.tabActive : theme.tabInactive}`}>Gestión de Carreras</button>
-                <button onClick={() => setActiveTab('riders')} className={`py-2 px-4 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'riders' ? theme.tabActive : theme.tabInactive}`}>Gestión de Pilotos</button>
+                <button onClick={() => setActiveTab('races')} className={`flex-1 py-3 px-2 text-sm sm:text-base font-semibold border-b-2 transition-colors flex items-center justify-center gap-2 ${activeTab === 'races' ? theme.tabActive : theme.tabInactive}`}>
+                    <CalendarIcon className="w-5 h-5"/><span>Gestión de Carreras</span>
+                </button>
+                <button onClick={() => setActiveTab('riders')} className={`flex-1 py-3 px-2 text-sm sm:text-base font-semibold border-b-2 transition-colors flex items-center justify-center gap-2 ${activeTab === 'riders' ? theme.tabActive : theme.tabInactive}`}>
+                    <UsersIcon className="w-5 h-5"/><span>Gestión de Pilotos</span>
+                </button>
             </div>
 
             {activeTab === 'races' && (
-                <div className="animate-fadeIn">
-                    <div className="border-b border-gray-700 pb-4">
-                        <h2 className="text-xl font-bold mb-2">Gestión de Gemini AI</h2>
-                        {geminiParticipant ? (
+                <div className="animate-fadeIn space-y-6">
+                    <div className="bg-gray-900/50 rounded-lg p-4">
+                        <h3 className="text-lg font-bold mb-3 text-white">Gestión de Gemini AI</h3>
+                         {geminiParticipant ? (
                             <div className="space-y-2">
                                 <p className="text-sm text-green-400">Gemini AI ya está en la liga.</p>
                                 <button onClick={handleGenerateGeminiTeam} disabled={!selectedRace || isGeneratingTeam} className={`w-full flex items-center justify-center gap-2 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}>
@@ -333,52 +363,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         ) : (
                             <button onClick={handleAddGeminiAndCreateTeam} disabled={isAddingGemini} className={`w-full flex items-center justify-center gap-2 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}>
                                 {isAddingGemini ? <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <SparklesIcon className="w-5 h-5" />}
-                                {isAddingGemini ? 'Añadiendo y Creando Equipo...' : 'Añadir a Gemini AI y Crear Equipo'}
+                                {isAddingGemini ? 'Añadiendo...' : 'Añadir a Gemini AI y Crear Equipo'}
                             </button>
                         )}
                     </div>
-                    <div className="pt-4">
-                        <div className="flex justify-between items-center mb-2">
-                            <h2 className="text-xl font-bold">Editar Resultados</h2>
-                            <div className="flex items-center gap-2">
+                    
+                    <div className="bg-gray-900/50 rounded-lg p-4 space-y-4">
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                             <h3 className="text-lg font-bold text-white">Jornada Seleccionada</h3>
+                            <div className="flex items-center gap-4 flex-shrink-0">
                                 <button onClick={handleFetchWithAI} disabled={!selectedRace || isFetchingPoints} className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                     {isFetchingPoints ? <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <SparklesIcon className="w-4 h-4" />}
-                                    <span>{isFetchingPoints ? 'Buscando...' : 'Buscar Resultados'}</span>
+                                    <span className="hidden sm:inline">{isFetchingPoints ? 'Buscando...' : 'Autocompletar'}</span>
                                 </button>
                                 <button onClick={onClearPoints} disabled={!selectedRace} className={`text-sm text-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${theme.hoverText}`}>Limpiar</button>
                             </div>
                         </div>
-                        <select value={selectedRace?.id ?? ''} onChange={(e) => { const race = races.find(r => r.id === Number(e.target.value)); if (race) onSelectRace(race); }} className="w-full bg-gray-900 text-white p-2 rounded-md mb-2" disabled={races.length === 0}>
+                        <select value={selectedRace?.id ?? ''} onChange={(e) => { const race = races.find(r => r.id === Number(e.target.value)); if (race) onSelectRace(race); }} className={`w-full bg-gray-700 text-white p-2 rounded-md ${theme.focusRing}`} disabled={races.length === 0}>
                             <option value="" disabled>{races.length === 0 ? 'No hay carreras' : 'Selecciona jornada...'}</option>
                             {sortedRaces.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
                         </select>
                         {selectedRace && (
-                            <div className="mt-2">
+                            <div>
                                 <label htmlFor="round-date" className="block text-sm font-medium text-gray-300 mb-1">Fecha Límite (Cierre de Mercado)</label>
-                                <input id="round-date" type="datetime-local" value={editedRaceDate} onChange={(e) => setEditedRaceDate(e.target.value)} onBlur={handleRaceDateChange} className={`w-full bg-gray-900 text-white p-2 rounded-md focus:outline-none focus:ring-2 ${theme.focusRing}`} />
+                                <input id="round-date" type="datetime-local" value={editedRaceDate} onChange={(e) => setEditedRaceDate(e.target.value)} onBlur={handleRaceDateChange} className={`w-full bg-gray-700 text-white p-2 rounded-md ${theme.focusRing}`} />
                             </div>
                         )}
-                        <div className="max-h-[45vh] overflow-y-auto pr-2 mt-4">
-                            {sport === 'motogp' && (
-                                <div className="space-y-6">
-                                    {renderResultSelects("Carrera Principal (Top 15)", 15, mainRaceResults, setMainRaceResults)}
-                                    {renderResultSelects("Carrera Sprint (Top 9)", 9, sprintRaceResults, setSprintRaceResults)}
-                                    <button onClick={() => handleSaveResults(mainRaceResults, sprintRaceResults, MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS)} disabled={!selectedRace || isSavingResults} className={`w-full mt-4 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}>
-                                        {isSavingResults ? 'Guardando...' : 'Guardar Resultados'}
-                                    </button>
-                                </div>
-                            )}
-                            {sport === 'f1' && (
-                                <div className="space-y-6">
-                                    {renderResultSelects("Carrera Principal (Top 10)", 10, f1MainRaceResults, setF1MainRaceResults)}
-                                    {renderResultSelects("Carrera Sprint (Top 8)", 8, f1SprintRaceResults, setF1SprintRaceResults)}
-                                    <button onClick={() => handleSaveResults(f1MainRaceResults, f1SprintRaceResults, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS)} disabled={!selectedRace || isSavingResults} className={`w-full mt-4 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}>
-                                        {isSavingResults ? 'Guardando...' : 'Guardar Resultados'}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
                     </div>
+
+                    {selectedRace && (
+                        <div>
+                             <h3 className="text-lg font-bold text-white mb-3">Resultados de la Carrera</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {sport === 'motogp' && (
+                                    <>
+                                        {renderResultSelects("Carrera Principal (Top 15)", 15, mainRaceResults, setMainRaceResults)}
+                                        {renderResultSelects("Carrera Sprint (Top 9)", 9, sprintRaceResults, setSprintRaceResults)}
+                                    </>
+                                )}
+                                {sport === 'f1' && (
+                                    <>
+                                        {renderResultSelects("Carrera Principal (Top 10)", 10, f1MainRaceResults, setF1MainRaceResults)}
+                                        {renderResultSelects("Carrera Sprint (Top 8)", 8, f1SprintRaceResults, setF1SprintRaceResults)}
+                                    </>
+                                )}
+                            </div>
+                             <button 
+                                onClick={() => sport === 'f1' ? handleSaveResults(f1MainRaceResults, f1SprintRaceResults, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS) : handleSaveResults(mainRaceResults, sprintRaceResults, MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS)}
+                                disabled={!selectedRace || isSavingResults}
+                                className={`w-full mt-6 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300 disabled:bg-gray-600 ${theme.button}`}
+                            >
+                                {isSavingResults ? 'Guardando...' : 'Guardar Resultados'}
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -389,12 +427,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                              <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                             <input type="text" placeholder="Buscar piloto..." value={riderSearch} onChange={(e) => setRiderSearch(e.target.value)} className={`w-full bg-gray-900 text-white p-2 pl-10 rounded-md focus:outline-none focus:ring-2 ${theme.focusRing}`} />
                         </div>
-                        <button onClick={() => setEditingRider('new')} className={`flex items-center justify-center gap-2 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 ${theme.button}`}>
+                        <button onClick={() => setEditingRider('new')} className={`flex items-center justify-center gap-2 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 ${theme.button} flex-shrink-0`}>
                             <PlusIcon className="w-5 h-5"/> Añadir Piloto
                         </button>
                     </div>
 
-                    <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-2">
+                    <div className="pr-2 space-y-2">
                         {filteredRiders.map(rider => (
                             <div key={rider.id} className="bg-gray-900/50 p-2 rounded-md flex justify-between items-center">
                                 <div>

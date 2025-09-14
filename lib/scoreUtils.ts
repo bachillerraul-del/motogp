@@ -1,5 +1,7 @@
-import type { Participant, Race, TeamSnapshot, AllRiderPoints, Rider, Constructor, RiderRoundPoints } from './types';
+import type { Participant, Race, TeamSnapshot, AllRiderPoints, Rider, Constructor, RiderRoundPoints, Sport } from './types';
 import { getTeamForRace } from './utils';
+import { MOTOGP_MAIN_RACE_POINTS, MOTOGP_SPRINT_RACE_POINTS, F1_MAIN_RACE_POINTS, F1_SPRINT_RACE_POINTS } from '../constants';
+
 
 /**
  * Represents the score of a single rider in a race.
@@ -9,6 +11,8 @@ export interface RiderScore {
     points: number;
     mainRacePoints: number;
     sprintRacePoints: number;
+    mainRacePosition: number | null;
+    sprintRacePosition: number | null;
 }
 
 /**
@@ -42,12 +46,22 @@ export const calculateScoreBreakdown = (
     teamSnapshots: TeamSnapshot[],
     allRiderPoints: AllRiderPoints,
     riders: Rider[],
-    constructors: Constructor[]
+    constructors: Constructor[],
+    sport: Sport
 ): ScoreBreakdown => {
     const { riderIds, constructorId } = getTeamForRace(participantId, raceId, teamSnapshots);
     const racePointsMap = allRiderPoints[raceId] || {};
     const ridersById = new Map(riders.map(r => [r.id, r]));
     const constructorsById = new Map(constructors.map(c => [c.id, c]));
+
+    const mainPointsSystem = sport === 'f1' ? F1_MAIN_RACE_POINTS : MOTOGP_MAIN_RACE_POINTS;
+    const sprintPointsSystem = sport === 'f1' ? F1_SPRINT_RACE_POINTS : MOTOGP_SPRINT_RACE_POINTS;
+
+    const mainPointsToPos = new Map<number, number>();
+    mainPointsSystem.forEach((p, i) => mainPointsToPos.set(p, i + 1));
+
+    const sprintPointsToPos = new Map<number, number>();
+    sprintPointsSystem.forEach((p, i) => sprintPointsToPos.set(p, i + 1));
 
     const riderScores: RiderScore[] = riderIds
         .map(id => ridersById.get(id))
@@ -59,6 +73,8 @@ export const calculateScoreBreakdown = (
                 points: riderPointsData.total,
                 mainRacePoints: riderPointsData.main,
                 sprintRacePoints: riderPointsData.sprint,
+                mainRacePosition: mainPointsToPos.get(riderPointsData.main) || null,
+                sprintRacePosition: sprintPointsToPos.get(riderPointsData.sprint) || null,
             };
         });
 
@@ -117,10 +133,11 @@ export const calculateScore = (
     teamSnapshots: TeamSnapshot[],
     allRiderPoints: AllRiderPoints,
     riders: Rider[],
-    constructors: Constructor[]
+    constructors: Constructor[],
+    sport: Sport
 ): number => {
     const calculateRaceScore = (race: Race) => {
-         const breakdown = calculateScoreBreakdown(participant.id, race.id, teamSnapshots, allRiderPoints, riders, constructors);
+         const breakdown = calculateScoreBreakdown(participant.id, race.id, teamSnapshots, allRiderPoints, riders, constructors, sport);
          return breakdown.totalScore;
     };
 

@@ -80,7 +80,7 @@ export const Results: React.FC<ResultsProps> = (props) => {
 
         sortedRaces.forEach(race => {
             participants.forEach(p => {
-                const raceScore = calculateScore(p, race.id, races, teamSnapshots, allRiderPoints, riders, constructors);
+                const raceScore = calculateScore(p, race.id, races, teamSnapshots, allRiderPoints, riders, constructors, sport);
                 cumulativeScores.set(p.id, (cumulativeScores.get(p.id) || 0) + raceScore);
             });
 
@@ -94,11 +94,11 @@ export const Results: React.FC<ResultsProps> = (props) => {
             ranksByRace.set(race.id, rankMap);
         });
         return ranksByRace;
-    }, [participants, sortedRaces, races, teamSnapshots, allRiderPoints, riders, constructors]);
+    }, [participants, sortedRaces, races, teamSnapshots, allRiderPoints, riders, constructors, sport]);
 
     const scoreCalculator = useCallback((participant: Participant) => {
-        return calculateScore(participant, leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors);
-    }, [leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors]);
+        return calculateScore(participant, leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors, sport);
+    }, [leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors, sport]);
 
     const sortedParticipants = useMemo(() => {
         const participantsWithScores = participants.map(p => ({

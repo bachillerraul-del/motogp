@@ -62,31 +62,19 @@ export const RiderDetailModal: React.FC<RiderDetailModalProps> = (props) => {
 
      const priceHistory = useMemo(() => {
         const history = [{ raceRound: 0, price: rider.initial_price }];
-        let currentPrice = rider.initial_price;
         
-        const sortedAdjustedRaces = [...races]
-            .filter(r => new Date(r.race_date) < new Date() && r.prices_adjusted)
-            .sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime());
+        // Find the latest race with points as a proxy for when the price might have changed.
+        const lastRaceWithPoints = [...races]
+            .filter(r => allRiderPoints[r.id] && Object.keys(allRiderPoints[r.id]).length > 0)
+            .sort((a, b) => b.round - a.round)[0];
 
-        for (const race of sortedAdjustedRaces) {
-            const participantsWithTeamsForRace = participants.filter(p => getTeamForRace(p.id, race.id, teamSnapshots).riderIds.length > 0);
-            const totalParticipantsForRace = participantsWithTeamsForRace.length;
-            if (totalParticipantsForRace === 0) continue;
-
-            const selectionCount = participantsWithTeamsForRace.filter(p => getTeamForRace(p.id, race.id, teamSnapshots).riderIds.includes(rider.id)).length;
-            const popularityPercent = (selectionCount / totalParticipantsForRace) * 100;
-
-            let priceChange = 0;
-            if (popularityPercent > 75) priceChange = 30;
-            else if (popularityPercent > 50) priceChange = 20;
-            else if (popularityPercent > 25) priceChange = 10;
-            
-            currentPrice = Math.max(0, currentPrice + priceChange);
-            history.push({ raceRound: race.round, price: currentPrice });
+        // If the price has changed and we have a race to anchor it to, show the evolution.
+        if (rider.price !== rider.initial_price && lastRaceWithPoints) {
+            history.push({ raceRound: lastRaceWithPoints.round, price: rider.price });
         }
         
         return history;
-    }, [rider, races, participants, teamSnapshots]);
+    }, [rider, races, allRiderPoints]);
 
     return (
         <Modal isOpen={!!rider} onClose={onClose} title="Detalles del Piloto" sport={sport}>

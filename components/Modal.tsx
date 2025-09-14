@@ -29,10 +29,10 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
             aria-labelledby="modal-title"
         >
             <div 
-                className={`bg-gray-800 rounded-lg shadow-xl w-full ${sizeClasses[size]} transform transition-all`}
+                className={`bg-gray-800 rounded-lg shadow-xl w-full ${sizeClasses[size]} transform transition-all flex flex-col max-h-[90vh]`}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-center justify-between p-4 border-b border-gray-700">
+                <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
                     <h2 id="modal-title" className="text-xl font-bold text-white">{title}</h2>
                     <button 
                         onClick={onClose} 
@@ -42,7 +42,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
                         <CloseIcon className="w-6 h-6" />
                     </button>
                 </div>
-                <div className="p-6">
+                <div className="p-6 overflow-y-auto">
                     {children}
                 </div>
             </div>

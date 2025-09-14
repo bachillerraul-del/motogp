@@ -4,7 +4,7 @@ import { TrophyIcon, TrashIcon, PencilIcon, CheckIcon, ShareIcon, ArrowDownTrayI
 import { getTeamForRace, getLatestTeam } from '../lib/utils';
 import { toPng } from 'html-to-image';
 import { Modal } from './Modal';
-import { calculateScoreBreakdown } from '../lib/scoreUtils';
+import { calculateScoreBreakdown, calculateScore } from '../lib/scoreUtils';
 import { useFantasy } from '../contexts/FantasyDataContext';
 import { RankChart } from './RankChart';
 
@@ -89,11 +89,11 @@ const ExpandedViewContent: React.FC<{
     participantRanks: Map<number, Map<number, number>>;
     races: Race[];
 }> = ({ participantId, raceId, onSelectRider, participantRanks, races }) => {
-    const { teamSnapshots, allRiderPoints, riders, constructors } = useFantasy();
+    const { teamSnapshots, allRiderPoints, riders, constructors, sport } = useFantasy();
     
     const breakdown = useMemo(() => calculateScoreBreakdown(
-        participantId, raceId, teamSnapshots, allRiderPoints, riders, constructors
-    ), [participantId, raceId, teamSnapshots, allRiderPoints, riders, constructors]);
+        participantId, raceId, teamSnapshots, allRiderPoints, riders, constructors, sport!
+    ), [participantId, raceId, teamSnapshots, allRiderPoints, riders, constructors, sport]);
 
     const sortedRiderScores = useMemo(() => [...breakdown.riderScores].sort((a, b) => b.points - a.points), [breakdown.riderScores]);
 
@@ -118,12 +118,12 @@ const ExpandedViewContent: React.FC<{
                 <div>
                     <h4 className="font-bold text-gray-300 mb-2">Desglose de Puntos</h4>
                     <div className="space-y-1.5">
-                        {sortedRiderScores.map(({ rider, points, mainRacePoints, sprintRacePoints }) => (
+                        {sortedRiderScores.map(({ rider, points, mainRacePoints, sprintRacePoints, mainRacePosition, sprintRacePosition }) => (
                             <div key={rider.id} className="flex justify-between items-center bg-gray-700/60 p-1.5 rounded-md">
                                 <button onClick={() => onSelectRider(rider)} className="text-left group min-w-0">
                                    <p className="font-semibold text-white group-hover:underline truncate text-xs">{rider.name}</p>
-                                   <p className="text-gray-400 text-xs truncate" title={`Carrera: ${mainRacePoints} / Sprint: ${sprintRacePoints}`}>
-                                        C: {mainRacePoints} / S: {sprintRacePoints}
+                                   <p className="text-gray-400 text-xs truncate" title={`Carrera: ${mainRacePosition ? `${mainRacePosition}º` : '-'} (${mainRacePoints}p) / Sprint: ${sprintRacePosition ? `${sprintRacePosition}º` : '-'} (${sprintRacePoints}p)`}>
+                                        C: {mainRacePosition ? `${mainRacePosition}º` : '-'} ({mainRacePoints}p) / S: {sprintRacePosition ? `${sprintRacePosition}º` : '-'} ({sprintRacePoints}p)
                                     </p>
                                 </button>
                                 <span className="font-bold text-yellow-300 ml-2 flex-shrink-0">{points} pts</span>

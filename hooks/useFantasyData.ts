@@ -339,9 +339,15 @@ export const useFantasyData = (sport: Sport | null) => {
                     });
 
                     if (totalWeight > 0) {
+                        const officialRidersById = new Map(officialRiders.map(r => [r.id, r]));
                         const riderPriceUpdates = riderWeights.map(({ id, weight }) => {
                             const newPrice = Math.round((weight / totalWeight) * MOTOGP_GRID_VALUE);
-                            return { id, price: newPrice };
+                            const riderData = officialRidersById.get(id);
+                            // Return the full rider object with the updated price to prevent NOT NULL constraint violations
+                            return {
+                                ...(riderData as Rider),
+                                price: newPrice,
+                            };
                         });
 
                         const finalSum = riderPriceUpdates.reduce((sum, r) => sum + r.price, 0);
