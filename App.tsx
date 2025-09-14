@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useMemo, Suspense, lazy } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Header } from './components/Header';
@@ -10,7 +11,6 @@ import { MOTOGP_BUDGET, MOTOGP_RIDER_LIMIT, F1_BUDGET, F1_RIDER_LIMIT, CONSTRUCT
 import { MotoIcon, F1Icon } from './components/Icons';
 import { BottomNav } from './components/BottomNav';
 import { FantasyDataProvider, useFantasy } from './contexts/FantasyDataContext';
-import { processPriceAdjustments } from './services/leagueService';
 import { RiderDetailModal } from './components/RiderDetailModal';
 import { ConstructorDetailModal } from './components/ConstructorDetailModal';
 
@@ -113,39 +113,6 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
         return () => subscription.unsubscribe();
     }, []);
 
-    useEffect(() => {
-        const runPriceAdjustments = async () => {
-            if (isAdmin && !loading && sport && races.length > 0 && riders.length > 0) {
-                const adjustmentData = processPriceAdjustments(races, riders, participants, teamSnapshots);
-                if (adjustmentData && (adjustmentData.ridersToUpdate.length > 0 || adjustmentData.raceIdsToUpdate.length > 0)) {
-                    showToast(`Detectadas ${adjustmentData.raceIdsToUpdate.length} jornadas pasadas. Ajustando precios...`, 'info');
-
-                    let didUpdate = false;
-                    if (adjustmentData.ridersToUpdate.length > 0) {
-                        didUpdate = true;
-                        const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
-                        const { error } = await supabase.from(riderTable).upsert(adjustmentData.ridersToUpdate);
-                        if (error) { showToast('Error crítico al actualizar precios de pilotos.', 'error'); console.error(error); return; }
-                    }
-                    
-                    if (adjustmentData.raceIdsToUpdate.length > 0) {
-                        const raceTable = sport === 'f1' ? 'f1_races' : 'races';
-                        const { error: raceUpdateError } = await supabase.from(raceTable).update({ prices_adjusted: true }).in('id', adjustmentData.raceIdsToUpdate);
-                        if (raceUpdateError) { showToast('Error al marcar jornadas como procesadas.', 'error'); console.error(raceUpdateError); return; }
-                    }
-                    
-                    if (didUpdate) {
-                        showToast('Precios de pilotos actualizados. Recargando datos...', 'success');
-                        await fetchData();
-                    } else if (adjustmentData.raceIdsToUpdate.length > 0) {
-                        await fetchData();
-                    }
-                }
-            }
-        };
-        runPriceAdjustments();
-    }, [isAdmin, loading, sport, races, riders, participants, teamSnapshots, showToast, fetchData]);
-
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoginError(null);
@@ -181,7 +148,7 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
         }
     };
 
-    const currentRace = useMemo(() => {
+    const nextRace = useMemo(() => {
         const now = new Date();
         return races
             .filter(r => r.race_date && new Date(r.race_date) > now)
@@ -238,13 +205,13 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
                                     onGoToResults={() => setView('results')}
                                     sport={sport}
                                     currentUser={currentUser}
-                                    currentRace={currentRace}
+                                    nextRace={nextRace}
                                 />
                             )}
                             {view === 'builder' && (
                                 <TeamBuilder 
                                     onUpdateTeam={handleUpdateParticipantTeam}
-                                    currentRace={currentRace}
+                                    currentRace={nextRace}
                                     currentUser={currentUser}
                                     BUDGET={constants.BUDGET}
                                     RIDER_LIMIT={constants.RIDER_LIMIT}
@@ -265,7 +232,7 @@ const MainApp: React.FC<{ sport: Sport; setSport: React.Dispatch<React.SetStateA
                                     currencyPrefix={constants.CURRENCY_PREFIX}
                                     currencySuffix={constants.CURRENCY_SUFFIX}
                                     currentUser={currentUser}
-                                    currentRace={currentRace}
+                                    currentRace={nextRace}
                                     onSelectRider={handleSelectRiderForDetail}
                                     addGeminiParticipant={addGeminiParticipant}
                                     onUpdateTeam={handleUpdateParticipantTeam}

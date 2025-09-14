@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Rider, Sport } from '../types';
 import { PlusIcon, ArrowUpIcon, ArrowDownIcon, CheckIcon, RemoveIcon } from './Icons';
@@ -71,7 +72,6 @@ export const RiderCard: React.FC<RiderCardProps> = ({ rider, onAdd, onSelect, is
                 <div className="flex justify-between items-start mb-2">
                     <div>
                         <h3 className="text-xl font-bold text-white group-hover:underline">{rider.name}</h3>
-                        <p className="text-sm text-gray-400">{rider.team} / {rider.bike}</p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-2">
                         <p className="text-lg font-semibold text-white">{formatPrice(rider.price)}</p>

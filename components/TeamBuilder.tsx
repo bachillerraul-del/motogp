@@ -1,12 +1,11 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Rider, Race, Participant, Sport, Constructor } from '../types';
 import { TeamSidebar } from './TeamSidebar';
 import { getLatestTeam } from '../lib/utils';
 import { ArrowPathIcon, ExclamationTriangleIcon, CheckIcon } from './Icons';
-import { Modal } from './Modal';
 import { RiderCard } from './RiderCard';
 import { ConstructorCard } from './ConstructorCard';
-import { ConstructorStats } from './ConstructorStats';
 import { useFantasy } from '../contexts/FantasyDataContext';
 
 // Helper function to create a unique, sorted identifier for a team selection.
@@ -15,7 +14,6 @@ const getTeamIdentifier = (riders: Rider[], constructor: Constructor | null): st
     const constructorId = constructor ? constructor.id : 'null';
     return `riders:${riderIds}|constructor:${constructorId}`;
 };
-
 
 // --- TeamBuilder Component and Children ---
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -52,10 +50,10 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
     const [selectedRiders, setSelectedRiders] = useState<Rider[]>(initialTeam.initialRiders);
     const [selectedConstructor, setSelectedConstructor] = useState<Constructor | null>(initialTeam.initialConstructor);
     const [isTeamSheetOpen, setIsTeamSheetOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<'riders' | 'constructors'>('riders');
     const [saveState, setSaveState] = useState<SaveState>('idle');
     const isInitialMount = useRef(true);
     const saveStateResetTimer = useRef<number | null>(null);
+    const [activeTab, setActiveTab] = useState<'constructors' | 'riders'>('constructors');
 
     const initialTeamIdentifier = useMemo(() => getTeamIdentifier(initialTeam.initialRiders, initialTeam.initialConstructor), [initialTeam]);
 
@@ -86,20 +84,16 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
     
         const currentTeamIdentifier = getTeamIdentifier(selectedRiders, selectedConstructor);
     
-        // If the selection matches the last saved state from the server, we're good.
         if (currentTeamIdentifier === initialTeamIdentifier) {
             setSaveState('saved');
             return;
         }
     
-        // If team is not valid, don't save, just show idle state.
-        // The sidebar will show why it's not valid.
         if (!isTeamValid) {
             setSaveState('idle');
             return;
         }
         
-        // If we have a valid team that is different from the saved one, save it immediately.
         const save = async () => {
             if (!currentUser || !currentRace || !selectedConstructor) return;
     
@@ -108,18 +102,13 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
     
             if (success) {
                 showToast('Equipo guardado automáticamente.', 'success');
-                // `onUpdateTeam` triggers a refetch, which will update `initialTeamIdentifier`.
-                // The next render's useEffect will see that identifiers match and set state to 'saved'.
             } else {
-                // OPTIMISTIC REVERT on failure
                 setSaveState('error');
                 showToast('Error al guardar. Se restauró tu equipo anterior.', 'error');
                 
-                // Revert the local state to what's on the server.
                 setSelectedRiders(initialTeam.initialRiders);
                 setSelectedConstructor(initialTeam.initialConstructor);
                 
-                // Set a timer to clear the error state. After revert, the state will be 'saved' again, so we can transition to idle.
                 saveStateResetTimer.current = window.setTimeout(() => setSaveState('idle'), 4000);
             }
         };
@@ -167,24 +156,32 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
         return selections;
     }, [participants, races, teamSnapshots]);
 
-    const filteredAndSortedRiders = useMemo(() => {
+     const structuredData = useMemo(() => {
+        const sortedConstructors = [...constructors].sort((a, b) => b.price - a.price);
+        const allOfficialRiders = riders.filter(r => r.is_official);
+        const reserveRiders = riders.filter(r => !r.is_official);
+        
+        const ridersByConstructor = new Map<number, Rider[]>();
+        allOfficialRiders.forEach(rider => {
+            const constructorId = rider.constructor_id;
+            if (!ridersByConstructor.has(constructorId)) {
+                ridersByConstructor.set(constructorId, []);
+            }
+            ridersByConstructor.get(constructorId)!.push(rider);
+        });
+
+        ridersByConstructor.forEach(teamRiders => teamRiders.sort((a, b) => b.price - a.price));
+
         const isUnavailable = (rider: Rider) => rider.condition?.includes('unavailable') || rider.condition?.includes('injured');
+        const sortedReserveRiders = reserveRiders.sort((a, b) => {
+            if (isUnavailable(a) && !isUnavailable(b)) return 1;
+            if (!isUnavailable(a) && isUnavailable(b)) return -1;
+            return b.price - a.price;
+        });
 
-        return [...riders]
-            .sort((a, b) => {
-                const aIsUnavailable = isUnavailable(a);
-                const bIsUnavailable = isUnavailable(b);
-                if (aIsUnavailable && !bIsUnavailable) return 1;
-                if (!aIsUnavailable && bIsUnavailable) return -1;
+        return { sortedConstructors, ridersByConstructor, sortedReserveRiders };
+    }, [riders, constructors]);
 
-                return b.price - a.price;
-            });
-    }, [riders]);
-
-    const filteredAndSortedConstructors = useMemo(() => {
-        return [...constructors]
-            .sort((a, b) => b.price - a.price);
-    }, [constructors]);
 
     const handleRemoveRider = (riderId: number) => {
         setSelectedRiders(selectedRiders.filter(rider => rider.id !== riderId));
@@ -232,110 +229,189 @@ export const TeamBuilder: React.FC<TeamBuilderProps> = (props) => {
         );
     }
     
-    const tabActiveStyle = 'border-fuchsia-500 text-white font-bold';
-    const tabInactiveStyle = 'border-transparent text-gray-400';
+    const theme = {
+        activeTab: sport === 'f1' ? 'border-red-500 text-white' : 'border-orange-500 text-white',
+        inactiveTab: 'border-transparent text-gray-400 hover:text-white',
+        border: sport === 'f1' ? 'border-red-600/30' : 'border-orange-500/30'
+    };
+
 
     return (
-        <div className="pb-24">
-            <div className="sticky top-[60px] bg-gray-900 z-10 pt-2">
-                <div className="flex border-b border-gray-700">
-                    <button onClick={() => setActiveTab('riders')} className={`py-3 px-6 text-sm uppercase tracking-wider border-b-2 transition-colors ${activeTab === 'riders' ? tabActiveStyle : tabInactiveStyle}`}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {/* Main selection area */}
+            <div className="md:col-span-2">
+                <div className="flex border-b border-gray-700 mb-6">
+                    <button
+                        onClick={() => setActiveTab('constructors')}
+                        className={`flex-1 py-3 text-center font-semibold transition-colors uppercase tracking-wider text-sm border-b-2 ${activeTab === 'constructors' ? theme.activeTab : theme.inactiveTab}`}
+                    >
+                        Escuderías
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('riders')}
+                        className={`flex-1 py-3 text-center font-semibold transition-colors uppercase tracking-wider text-sm border-b-2 ${activeTab === 'riders' ? theme.activeTab : theme.inactiveTab}`}
+                    >
                         Pilotos
                     </button>
-                    <button onClick={() => setActiveTab('constructors')} className={`py-3 px-6 text-sm uppercase tracking-wider border-b-2 transition-colors ${activeTab === 'constructors' ? tabActiveStyle : tabInactiveStyle}`}>
-                        Constructores
-                    </button>
+                </div>
+                
+                {activeTab === 'constructors' && (
+                    <div className="animate-fadeIn grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {structuredData.sortedConstructors.map(c => (
+                            <ConstructorCard
+                                key={c.id}
+                                constructorItem={c}
+                                onAdd={handleToggleConstructor}
+                                onSelect={onSelectConstructor}
+                                isSelected={selectedConstructor?.id === c.id}
+                                isAffordable={remainingBudget >= c.price || selectedConstructor?.id === c.id}
+                                priceChange={c.price - c.initial_price}
+                                currencyPrefix={currencyPrefix}
+                                currencySuffix={currencySuffix}
+                                riders={riders}
+                                sport={sport}
+                            />
+                        ))}
+                    </div>
+                )}
+                
+                {activeTab === 'riders' && (
+                    <div className="animate-fadeIn space-y-8">
+                        {structuredData.sortedConstructors.map(constructor => {
+                            const teamRiders = structuredData.ridersByConstructor.get(constructor.id) || [];
+                            if (teamRiders.length === 0) return null;
+                            return (
+                                <div key={constructor.id}>
+                                    <h2 className={`text-2xl font-bold text-gray-200 border-b-2 ${theme.border} pb-2 mb-4`}>{constructor.name.toUpperCase()}</h2>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {teamRiders.map(rider => (
+                                            <RiderCard
+                                                key={rider.id}
+                                                rider={rider}
+                                                onAdd={handleToggleRider}
+                                                onSelect={onSelectRider}
+                                                isRiderTeamFull={selectedRiders.length >= RIDER_LIMIT}
+                                                isInTeam={teamRiderIds.has(rider.id)}
+                                                isAffordable={remainingBudget >= rider.price || teamRiderIds.has(rider.id)}
+                                                selectedByTeams={selectionsByRider.get(rider.id) || []}
+                                                priceChange={rider.price - rider.initial_price}
+                                                currencyPrefix={currencyPrefix}
+                                                currencySuffix={currencySuffix}
+                                                sport={sport}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )
+                        })}
+
+                        {structuredData.sortedReserveRiders.length > 0 && (
+                             <div>
+                                <h2 className={`text-2xl font-bold text-gray-200 border-b-2 ${theme.border} pb-2 mb-4`}>RESERVAS</h2>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {structuredData.sortedReserveRiders.map(rider => (
+                                        <RiderCard
+                                            key={rider.id}
+                                            rider={rider}
+                                            onAdd={handleToggleRider}
+                                            onSelect={onSelectRider}
+                                            isRiderTeamFull={selectedRiders.length >= RIDER_LIMIT}
+                                            isInTeam={teamRiderIds.has(rider.id)}
+                                            isAffordable={remainingBudget >= rider.price || teamRiderIds.has(rider.id)}
+                                            selectedByTeams={selectionsByRider.get(rider.id) || []}
+                                            priceChange={rider.price - rider.initial_price}
+                                            currencyPrefix={currencyPrefix}
+                                            currencySuffix={currencySuffix}
+                                            sport={sport}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Sticky Sidebar for Desktop */}
+            <div className="hidden md:block md:col-span-1">
+                <div className="sticky top-24">
+                    <TeamSidebar
+                        riders={selectedRiders}
+                        constructor={selectedConstructor}
+                        onRemoveRider={handleRemoveRider}
+                        onRemoveConstructor={handleRemoveConstructor}
+                        budget={BUDGET}
+                        remainingBudget={remainingBudget}
+                        riderLimit={RIDER_LIMIT}
+                        constructorLimit={CONSTRUCTOR_LIMIT}
+                        currentUser={currentUser}
+                        newUserName={null}
+                        currencyPrefix={currencyPrefix}
+                        currencySuffix={currencySuffix}
+                        isTeamValid={isTeamValid}
+                        sport={sport}
+                        saveState={saveState}
+                    />
                 </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-                {activeTab === 'riders' && filteredAndSortedRiders.map(rider => (
-                    <RiderCard 
-                        key={rider.id}
-                        rider={rider}
-                        onAdd={handleToggleRider}
-                        onSelect={onSelectRider}
-                        isRiderTeamFull={selectedRiders.length >= RIDER_LIMIT}
-                        isInTeam={teamRiderIds.has(rider.id)}
-                        isAffordable={remainingBudget >= rider.price || teamRiderIds.has(rider.id)}
-                        selectedByTeams={selectionsByRider.get(rider.id) || []}
-                        priceChange={rider.price - rider.initial_price}
-                        currencyPrefix={currencyPrefix}
-                        currencySuffix={currencySuffix}
-                        sport={sport}
-                    />
-                ))}
-                {activeTab === 'constructors' && filteredAndSortedConstructors.map(c => (
-                    <ConstructorCard
-                        key={c.id}
-                        constructorItem={c}
-                        onAdd={handleToggleConstructor}
-                        onSelect={onSelectConstructor}
-                        isSelected={selectedConstructor?.id === c.id}
-                        isAffordable={remainingBudget >= c.price || selectedConstructor?.id === c.id}
-                        priceChange={c.price - c.initial_price}
-                        currencyPrefix={currencyPrefix}
-                        currencySuffix={currencySuffix}
-                        riders={riders}
-                        sport={sport}
-                    />
-                ))}
-            </div>
-
-            <div className="fixed bottom-16 left-0 right-0 bg-gray-800 border-t border-gray-700 p-2 shadow-lg z-30 animate-fadeIn">
-                 <div className="container mx-auto flex items-center justify-between gap-2 relative">
-                    <div className="flex-grow flex items-center gap-4 text-sm text-gray-300">
-                        <div className="flex items-center gap-2">
-                           <span className="font-bold">{selectedRiders.length}/{RIDER_LIMIT}</span>
-                           <span className="hidden sm:inline">Pilotos</span>
-                        </div>
-                        <div className="hidden sm:block h-6 border-l border-gray-600"></div>
-                        <div className="text-xs sm:text-sm">
-                           <p className="text-gray-400">Presupuesto</p>
-                           <p className={`font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>{formatPrice(remainingBudget)}</p>
-                        </div>
-                    </div>
-                     <div className="absolute left-1/2 -translate-x-1/2 hidden md:block">
-                        {renderSaveStatus()}
-                    </div>
-                    <button onClick={() => setIsTeamSheetOpen(true)} className={`text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 flex-shrink-0 ${isTeamValid ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                       Ver Mi Equipo
-                    </button>
-                 </div>
-            </div>
-
-            {isTeamSheetOpen && (
-                 <>
-                    <div className="fixed inset-0 bg-black bg-opacity-60 z-40" onClick={() => setIsTeamSheetOpen(false)}></div>
-                    <div className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ease-out ${isTeamSheetOpen ? 'translate-y-0' : 'translate-y-full'}`}>
-                         <div className="bg-gray-800 rounded-t-2xl max-h-[80vh] overflow-y-auto">
-                            <div className="sticky top-0 bg-gray-800 p-2 z-10 flex justify-center">
-                                <div className="w-12 h-1.5 bg-gray-600 rounded-full"></div>
+            {/* Mobile Bottom Bar & Modal */}
+            <div className="md:hidden">
+                <div className="fixed bottom-16 left-0 right-0 bg-gray-800 border-t border-gray-700 p-2 shadow-lg z-30 animate-fadeIn">
+                    <div className="container mx-auto flex items-center justify-between gap-2 relative">
+                        <div className="flex-grow flex items-center gap-4 text-sm text-gray-300">
+                            <div className="flex items-center gap-2">
+                            <span className="font-bold">{selectedRiders.length}/{RIDER_LIMIT}</span>
+                            <span className="hidden sm:inline">Pilotos</span>
                             </div>
-                            <div className="p-4 pt-0">
-                                <TeamSidebar
-                                    riders={selectedRiders}
-                                    constructor={selectedConstructor}
-                                    onRemoveRider={handleRemoveRider}
-                                    onRemoveConstructor={handleRemoveConstructor}
-                                    budget={BUDGET}
-                                    remainingBudget={remainingBudget}
-                                    riderLimit={RIDER_LIMIT}
-                                    constructorLimit={CONSTRUCTOR_LIMIT}
-                                    currentUser={currentUser}
-                                    newUserName={null}
-                                    currencyPrefix={currencyPrefix}
-                                    currencySuffix={currencySuffix}
-                                    isTeamValid={isTeamValid}
-                                    sport={sport}
-                                    saveState={saveState}
-                                    onClose={() => setIsTeamSheetOpen(false)}
-                                />
+                            <div className="hidden sm:block h-6 border-l border-gray-600"></div>
+                            <div className="text-xs sm:text-sm">
+                            <p className="text-gray-400">Presupuesto</p>
+                            <p className={`font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-green-400'}`}>{formatPrice(remainingBudget)}</p>
                             </div>
-                         </div>
+                        </div>
+                        <div className="absolute left-1/2 -translate-x-1/2 hidden md:block">
+                            {renderSaveStatus()}
+                        </div>
+                        <button onClick={() => setIsTeamSheetOpen(true)} className={`text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 flex-shrink-0 ${isTeamValid ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                        Ver Mi Equipo
+                        </button>
                     </div>
-                 </>
-            )}
+                </div>
+
+                {isTeamSheetOpen && (
+                    <>
+                        <div className="fixed inset-0 bg-black bg-opacity-60 z-40" onClick={() => setIsTeamSheetOpen(false)}></div>
+                        <div className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ease-out ${isTeamSheetOpen ? 'translate-y-0' : 'translate-y-full'}`}>
+                            <div className="bg-gray-800 rounded-t-2xl max-h-[80vh] overflow-y-auto">
+                                <div className="sticky top-0 bg-gray-800 p-2 z-10 flex justify-center">
+                                    <div className="w-12 h-1.5 bg-gray-600 rounded-full"></div>
+                                </div>
+                                <div className="p-4 pt-0">
+                                    <TeamSidebar
+                                        riders={selectedRiders}
+                                        constructor={selectedConstructor}
+                                        onRemoveRider={handleRemoveRider}
+                                        onRemoveConstructor={handleRemoveConstructor}
+                                        budget={BUDGET}
+                                        remainingBudget={remainingBudget}
+                                        riderLimit={RIDER_LIMIT}
+                                        constructorLimit={CONSTRUCTOR_LIMIT}
+                                        currentUser={currentUser}
+                                        newUserName={null}
+                                        currencyPrefix={currencyPrefix}
+                                        currencySuffix={currencySuffix}
+                                        isTeamValid={isTeamValid}
+                                        sport={sport}
+                                        saveState={saveState}
+                                        onClose={() => setIsTeamSheetOpen(false)}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
         </div>
     );
 };

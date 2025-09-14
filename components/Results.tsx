@@ -1,17 +1,20 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import type { Rider, Participant, Race, Sport, Constructor } from '../types';
 import { supabase } from '../lib/supabaseClient';
 import { Modal } from './Modal';
 import { AdminPanel } from './AdminPanel';
 import { Leaderboard } from './Leaderboard';
 import { RiderLeaderboard } from './RiderLeaderboard';
-import { CogIcon, ClipboardDocumentListIcon } from './Icons';
+import { CogIcon, TrophyIcon, UsersIcon, ChartBarIcon } from './Icons';
 import { useFantasy } from '../contexts/FantasyDataContext';
 import { calculateScore } from '../lib/scoreUtils';
 import { getTeamForRace } from '../lib/utils';
+import { DreamTeam } from './DreamTeam';
+import { ConstructorLeaderboard } from './ConstructorLeaderboard';
+import { LeagueStats } from './LeagueStats';
 
 
-type RiderWithScore = Rider & { score: number };
+type ResultsTab = 'participants' | 'riders' | 'constructors' | 'stats';
 
 interface ResultsProps {
     isAdmin: boolean;
@@ -29,14 +32,14 @@ interface ResultsProps {
 
 export const Results: React.FC<ResultsProps> = (props) => {
     const { 
-        isAdmin, sport, currentUser, currentRace, onSelectRider, addGeminiParticipant, onUpdateTeam
+        isAdmin, sport, currentUser, currentRace, onSelectRider, addGeminiParticipant, onUpdateTeam,
+        currencyPrefix, currencySuffix
     } = props;
     
-    // FIX: Renamed destructured functions to match what useFantasy hook provides (e.g., onUpdateParticipant -> handleUpdateParticipant).
     const {
         participants, races, teamSnapshots, riders, constructors, allRiderPoints,
         handleBulkUpdatePoints, showToast, fetchData, handleUpdateParticipant, handleDeleteParticipant,
-        handleUpdateRace, handleUpdateRider
+        handleUpdateRace, handleUpdateRider, handleCreateRider
     } = useFantasy();
 
     const [selectedRaceForEditing, setSelectedRaceForEditing] = useState<Race | null>(null);
@@ -44,35 +47,20 @@ export const Results: React.FC<ResultsProps> = (props) => {
     const defaultViewIsSet = useRef(false);
     
     const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
-    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-    const [shareableText, setShareableText] = useState('');
-    
     const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
     const [isConfirmingClearPoints, setIsConfirmingClearPoints] = useState(false);
+    const [activeTab, setActiveTab] = useState<ResultsTab>('participants');
+    
+    const sortedRaces = useMemo(() => [...races].sort((a, b) => a.round - b.round), [races]);
 
     useEffect(() => {
         if (races.length > 0 && !defaultViewIsSet.current) {
-            let defaultRace: Race | undefined;
-
-            if (currentUser) {
-                const userSnapshots = teamSnapshots
-                    .filter(s => s.participant_id === currentUser.id && s.race_id !== null)
-                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                
-                if (userSnapshots.length > 0) {
-                    const latestRaceId = userSnapshots[0].race_id;
-                    defaultRace = races.find(r => r.id === latestRaceId);
-                }
-            }
-
+            let defaultRace: Race | undefined = [...races]
+                .filter(r => allRiderPoints[r.id] && Object.keys(allRiderPoints[r.id]).length > 0)
+                .sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
+            
             if (!defaultRace) {
-                defaultRace = [...races]
-                    .filter(r => allRiderPoints[r.id] && Object.keys(allRiderPoints[r.id]).length > 0)
-                    .sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
-            }
-
-            if (!defaultRace) {
-                defaultRace = [...races].sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())[0];
+                defaultRace = sortedRaces.slice().reverse()[0];
             }
             
             if (defaultRace) {
@@ -83,10 +71,63 @@ export const Results: React.FC<ResultsProps> = (props) => {
             }
             defaultViewIsSet.current = true;
         }
-    }, [races, allRiderPoints, selectedRaceForEditing, currentUser, teamSnapshots]);
+    }, [races, allRiderPoints, selectedRaceForEditing, sortedRaces]);
+
+    const participantRanks = useMemo(() => {
+        const ranksByRace = new Map<number, Map<number, number>>();
+        let cumulativeScores = new Map<number, number>();
+        participants.forEach(p => cumulativeScores.set(p.id, 0));
+
+        sortedRaces.forEach(race => {
+            participants.forEach(p => {
+                const raceScore = calculateScore(p, race.id, races, teamSnapshots, allRiderPoints, riders, constructors);
+                cumulativeScores.set(p.id, (cumulativeScores.get(p.id) || 0) + raceScore);
+            });
+
+            const ranked = [...cumulativeScores.entries()]
+                // FIX: Corrected typo in sort function from `a` to `scoreA`.
+                .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
+                .map(([participantId], index) => ({ participantId, rank: index + 1 }));
+
+            const rankMap = new Map<number, number>();
+            ranked.forEach(({ participantId, rank }) => rankMap.set(participantId, rank));
+            ranksByRace.set(race.id, rankMap);
+        });
+        return ranksByRace;
+    }, [participants, sortedRaces, races, teamSnapshots, allRiderPoints, riders, constructors]);
+
+    const scoreCalculator = useCallback((participant: Participant) => {
+        return calculateScore(participant, leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors);
+    }, [leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors]);
+
+    const sortedParticipants = useMemo(() => {
+        const participantsWithScores = participants.map(p => ({
+            ...p,
+            score: Math.round(scoreCalculator(p)),
+            rankChange: undefined as number | undefined
+        }));
+
+        if (leaderboardView !== 'general') {
+            const currentRaceIndex = sortedRaces.findIndex(r => r.id === leaderboardView);
+            if (currentRaceIndex > 0) {
+                const prevRace = sortedRaces[currentRaceIndex - 1];
+                const currentRanks = participantRanks.get(leaderboardView as number);
+                const prevRanks = participantRanks.get(prevRace.id);
+
+                participantsWithScores.forEach(p => {
+                    const currentRank = currentRanks?.get(p.id);
+                    const prevRank = prevRanks?.get(p.id);
+                    if (currentRank != null && prevRank != null) {
+                        p.rankChange = prevRank - currentRank;
+                    }
+                });
+            }
+        }
+        return participantsWithScores.sort((a, b) => b.score - a.score);
+    }, [participants, scoreCalculator, leaderboardView, sortedRaces, participantRanks]);
 
     const confirmClearPoints = async () => {
-        if (selectedRaceForEditing === null) return;
+        if (!selectedRaceForEditing) return;
         const pointTable = sport === 'f1' ? 'f1_rider_points' : 'rider_points';
         const { error } = await supabase.from(pointTable).delete().eq('round_id', selectedRaceForEditing.id);
         if (error) {
@@ -98,161 +139,87 @@ export const Results: React.FC<ResultsProps> = (props) => {
         setIsConfirmingClearPoints(false);
     };
 
-    const handleShareSelections = useCallback(() => {
-        if (leaderboardView === 'general') {
-            showToast('Selecciona una jornada específica para compartir.', 'info');
-            return;
-        }
-    
-        const race = races.find(r => r.id === leaderboardView);
-        if (!race) return;
-    
-        const ridersById = new Map(riders.map(r => [r.id, r]));
-        const constructorsById = new Map(constructors.map(c => [c.id, c]));
-
-        const formatPrice = (price: number): string => {
-            const value = props.currencySuffix === 'M' ? (price / 10).toFixed(1) : price.toLocaleString('es-ES');
-            return `${props.currencyPrefix}${value}${props.currencySuffix}`;
-        }
-    
-        const participantTeams = participants.map(participant => {
-            const { riderIds, constructorId } = getTeamForRace(participant.id, race.id, teamSnapshots);
-            const teamRiders = riderIds.map(id => ridersById.get(id)).filter((r): r is Rider => !!r);
-            const teamConstructor = constructorId ? constructorsById.get(constructorId) : null;
-            return { participant, teamRiders, teamConstructor };
-        }).filter(pt => pt.teamRiders.length > 0 && pt.teamConstructor);
-    
-        const sportName = sport === 'f1' ? 'Fórmula 1' : 'MotoGP';
-        let text = `*Fantasy ${sportName} - Selecciones para ${race.gp_name}* 🏁\n\n`;
-        text += `---------------------------------\n\n`;
-    
-        participantTeams.forEach(({ participant, teamRiders, teamConstructor }) => {
-            text += `*${participant.name}*:\n`;
-            teamRiders.forEach(rider => {
-                text += `  • ${rider.name} (${formatPrice(rider.price)})\n`;
-            });
-            if (teamConstructor) {
-                text += `  • _${teamConstructor.name} (Escudería)_ (${formatPrice(teamConstructor.price)})\n`;
-            }
-            text += '\n';
-        });
-    
-        setShareableText(text);
-        setIsShareModalOpen(true);
-    }, [leaderboardView, races, participants, teamSnapshots, riders, constructors, sport, showToast, props.currencyPrefix, props.currencySuffix]);
-
-    const handleCopyToClipboard = () => {
-        navigator.clipboard.writeText(shareableText).then(() => {
-            showToast('Texto copiado al portapapeles.', 'success');
-            setIsShareModalOpen(false);
-        }, (err) => {
-            console.error('Could not copy text: ', err);
-            showToast('Error al copiar el texto.', 'error');
-        });
-    };
-
     const confirmDeleteParticipant = () => {
         if (!participantToDelete) return;
-        // FIX: Renamed to match function from useFantasy hook.
         handleDeleteParticipant(participantToDelete.id);
         setParticipantToDelete(null);
     };
 
-    const scoreCalculator = useCallback((participant: Participant) => {
-        return calculateScore(participant, leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors);
-    }, [leaderboardView, races, teamSnapshots, allRiderPoints, riders, constructors]);
-
-
-    const sortedParticipants = useMemo(() => {
-        return [...participants].map(p => ({
-            ...p,
-            score: Math.round(scoreCalculator(p))
-        })).sort((a, b) => b.score - a.score);
-    }, [participants, scoreCalculator]);
-
-    const sortedRiders = useMemo(() => {
-        const riderScores: Record<number, number> = {};
-
-        if (leaderboardView === 'general') {
-            Object.values(allRiderPoints).forEach(roundPoints => {
-                Object.entries(roundPoints).forEach(([riderId, pointsData]) => {
-                    const id = parseInt(riderId, 10);
-                    riderScores[id] = (riderScores[id] || 0) + pointsData.total;
-                });
-            });
-        } else {
-            const selectedRoundPoints = allRiderPoints[leaderboardView] || {};
-            Object.entries(selectedRoundPoints).forEach(([riderId, pointsData]) => {
-                riderScores[parseInt(riderId, 10)] = pointsData.total;
-            });
-        }
-
-        return riders
-            .map(rider => ({ ...rider, score: riderScores[rider.id] || 0 }))
-            .filter(rider => rider.score > 0)
-            .sort((a, b) => b.score - a.score);
-    }, [allRiderPoints, riders, leaderboardView]);
-
-    const riderLeaderboardTitle = useMemo(() => {
-        if (leaderboardView === 'general') return "Clasificación de Pilotos";
+    const leaderboardTitle = useMemo(() => {
+        if (leaderboardView === 'general') return "Clasificación General";
         const race = races.find(r => r.id === leaderboardView);
-        return race ? `Pilotos: ${race.gp_name}` : "Clasificación de Pilotos";
+        return race ? `Clasificación ${race.gp_name}` : "Clasificación General";
     }, [leaderboardView, races]);
 
-    const [activeTab, setActiveTab] = useState<'participants' | 'riders'>('participants');
+    const theme = {
+        tabActive: `border-b-2 font-semibold ${sport === 'f1' ? 'border-red-500 text-white' : 'border-orange-500 text-white'}`,
+        tabInactive: 'border-b-2 border-transparent text-gray-400 hover:text-white',
+    };
+
+    const tabs: { id: ResultsTab; label: string; icon: React.ReactNode }[] = [
+        { id: 'participants', label: 'Clasificación', icon: <TrophyIcon className="w-5 h-5" /> },
+        { id: 'riders', label: 'Pilotos', icon: <UsersIcon className="w-5 h-5" /> },
+        { id: 'constructors', label: 'Escuderías', icon: <UsersIcon className="w-5 h-5" /> },
+        { id: 'stats', label: 'Estadísticas', icon: <ChartBarIcon className="w-5 h-5" /> },
+    ];
 
     return (
         <div className="space-y-6">
              {isAdmin && (
                 <div className="mb-2">
-                    <button
-                        onClick={() => setIsAdminPanelOpen(true)}
-                        className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300"
-                    >
-                        <CogIcon className="w-5 h-5" />
-                        Panel de Administrador
+                    <button onClick={() => setIsAdminPanelOpen(true)} className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors">
+                        <CogIcon className="w-5 h-5" /> Panel de Administrador
                     </button>
                 </div>
             )}
-            <div className="block sm:hidden">
-                 <select 
-                    value={activeTab} 
-                    onChange={e => setActiveTab(e.target.value as 'participants' | 'riders')}
-                    className="bg-gray-800 text-white p-2 rounded-md w-full"
-                 >
-                     <option value="participants">Clasificación de Participantes</option>
-                     <option value="riders">Clasificación de Pilotos</option>
-                 </select>
-             </div>
+            
+             <div className="flex flex-wrap justify-between items-center gap-y-2 gap-x-4">
+                <h2 className="text-2xl font-bold">{leaderboardTitle}</h2>
+                <div className="w-full sm:w-auto">
+                    <select value={leaderboardView} onChange={e => setLeaderboardView(e.target.value === 'general' ? 'general' : Number(e.target.value))} className="bg-gray-800 text-white p-2 rounded-md w-full">
+                        <option value="general">Clasificación General</option>
+                        <optgroup label="Por Jornada">
+                            {sortedRaces.map(race => <option key={race.id} value={race.id}>{race.gp_name}</option>)}
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                 <div className={`lg:col-span-2 ${activeTab !== 'participants' && 'hidden sm:block'}`}>
+            <div className="border-b border-gray-700 flex">
+                {tabs.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center justify-center gap-2 flex-1 py-3 text-center text-sm uppercase tracking-wider transition-colors ${activeTab === tab.id ? theme.tabActive : theme.tabInactive}`}>
+                        {tab.icon} <span className="hidden sm:inline">{tab.label}</span>
+                    </button>
+                ))}
+            </div>
+
+            <div className="mt-4">
+                {activeTab === 'participants' && (
                      <Leaderboard
                         participants={sortedParticipants}
                         races={races}
                         leaderboardView={leaderboardView}
-                        onLeaderboardViewChange={setLeaderboardView}
                         isAdmin={isAdmin}
                         onDeleteParticipant={setParticipantToDelete}
                         onUpdateParticipant={handleUpdateParticipant}
                         teamSnapshots={teamSnapshots}
-                        onShare={handleShareSelections}
                         riders={riders}
                         constructors={constructors}
                         sport={sport}
                         currencyPrefix={props.currencyPrefix}
                         currencySuffix={props.currencySuffix}
                         onSelectRider={onSelectRider}
+                        participantRanks={participantRanks}
                     />
-                </div>
-                 <div className={`lg:col-span-1 ${activeTab !== 'riders' && 'hidden sm:block'}`}>
-                     <RiderLeaderboard
-                        riders={sortedRiders}
-                        onSelectRider={onSelectRider}
-                        title={riderLeaderboardTitle}
-                        sport={sport}
-                    />
-                </div>
+                )}
+                {activeTab === 'riders' && <RiderLeaderboard sport={sport} leaderboardView={leaderboardView} onSelectRider={onSelectRider} currencyPrefix={currencyPrefix} currencySuffix={currencySuffix}/>}
+                {activeTab === 'constructors' && <ConstructorLeaderboard sport={sport} leaderboardView={leaderboardView} currencyPrefix={currencyPrefix} currencySuffix={currencySuffix}/>}
+                {activeTab === 'stats' && (
+                    <div className="space-y-8">
+                        <DreamTeam sport={sport} currencyPrefix={currencyPrefix} currencySuffix={currencySuffix} />
+                        <LeagueStats sport={sport} currencyPrefix={currencyPrefix} currencySuffix={currencySuffix} />
+                    </div>
+                )}
             </div>
             
             <Modal isOpen={!!participantToDelete} onClose={() => setParticipantToDelete(null)} title="Confirmar Eliminación" sport={sport}>
@@ -260,62 +227,42 @@ export const Results: React.FC<ResultsProps> = (props) => {
                     <p>¿Estás seguro de que quieres eliminar a <strong className="text-white">{participantToDelete?.name}</strong> de la liga?</p>
                     <p className="text-sm text-red-400">Esta acción no se puede deshacer.</p>
                     <div className="flex gap-4 pt-2">
-                        <button onClick={() => setParticipantToDelete(null)} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Cancelar</button>
-                        <button onClick={confirmDeleteParticipant} className={`w-full text-white font-bold py-2 px-4 rounded-lg transition-colors ${sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'}`}>Eliminar</button>
+                        <button onClick={() => setParticipantToDelete(null)} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                        <button onClick={confirmDeleteParticipant} className={`w-full text-white font-bold py-2 px-4 rounded-lg ${sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'}`}>Eliminar</button>
                     </div>
                 </div>
             </Modal>
             
-             <Modal isOpen={isConfirmingClearPoints} onClose={() => setIsConfirmingClearPoints(false)} title="Confirmar Limpieza de Puntos" sport={sport}>
-                <div className="space-y-4 text-center">
-                    <p>¿Estás seguro de que quieres limpiar todos los puntos para la jornada seleccionada?</p>
-                    <p className="text-sm text-red-400">Esto pondrá a 0 los puntos de todos los pilotos para esta jornada.</p>
-                     <div className="flex gap-4 pt-2">
-                        <button onClick={() => setIsConfirmingClearPoints(false)} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Cancelar</button>
-                        <button onClick={confirmClearPoints} className={`w-full text-white font-bold py-2 px-4 rounded-lg transition-colors ${sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'}`}>Limpiar Puntos</button>
+            <Modal isOpen={isConfirmingClearPoints} onClose={() => setIsConfirmingClearPoints(false)} title="Confirmar Limpieza" sport={sport}>
+                 <div className="space-y-4 text-center">
+                    <p>¿Limpiar todos los puntos para <strong className="text-white">{selectedRaceForEditing?.gp_name}</strong>? Esta acción es irreversible.</p>
+                    <div className="flex gap-4 pt-2">
+                        <button onClick={() => setIsConfirmingClearPoints(false)} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Cancelar</button>
+                        <button onClick={confirmClearPoints} className={`w-full text-white font-bold py-2 px-4 rounded-lg ${sport === 'f1' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'}`}>Confirmar</button>
                     </div>
                 </div>
             </Modal>
             
-            <Modal isOpen={isAdminPanelOpen} onClose={() => setIsAdminPanelOpen(false)} title="Panel de Administrador" sport={sport}>
-                <div className="max-h-[75vh] overflow-y-auto pr-2 -mr-4">
-                    <AdminPanel
-                        races={races}
-                        riders={riders}
-                        constructors={constructors}
-                        participants={participants}
-                        riderPoints={allRiderPoints}
-                        sport={sport}
-                        selectedRace={selectedRaceForEditing}
-                        currentRace={currentRace}
-                        onSelectRace={setSelectedRaceForEditing}
-                        onClearPoints={() => { setIsConfirmingClearPoints(true); setIsAdminPanelOpen(false); }}
-                        addGeminiParticipant={addGeminiParticipant}
-                        onUpdateTeam={onUpdateTeam}
-                        // FIX: Renamed to match functions from useFantasy hook.
-                        onUpdateRace={handleUpdateRace}
-                        onUpdateRider={handleUpdateRider}
-                        onBulkUpdatePoints={handleBulkUpdatePoints}
-                        showToast={showToast}
-                    />
-                </div>
-            </Modal>
-
-            <Modal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} title={`Compartir Selecciones para ${races.find(r => r.id === leaderboardView)?.gp_name}`} sport={sport} size="lg">
-                <div>
-                    <p className="text-sm text-gray-400 mb-2">Copia este texto y pégalo en tu grupo de WhatsApp.</p>
-                    <textarea
-                        readOnly
-                        className="w-full h-64 bg-gray-900 text-gray-300 p-3 rounded-md border border-gray-700 focus:ring-0 focus:outline-none"
-                        value={shareableText}
-                    />
-                    <button
-                        onClick={handleCopyToClipboard}
-                        className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors duration-300 flex items-center justify-center gap-3"
-                    >
-                        <ClipboardDocumentListIcon className="w-6 h-6"/> Copiar Texto
-                    </button>
-                </div>
+            <Modal isOpen={isAdminPanelOpen} onClose={() => setIsAdminPanelOpen(false)} title="Panel de Administrador" sport={sport} size="xl">
+                <AdminPanel
+                    races={races}
+                    selectedRace={selectedRaceForEditing}
+                    currentRace={currentRace}
+                    onSelectRace={setSelectedRaceForEditing}
+                    onUpdateRace={handleUpdateRace}
+                    onClearPoints={() => setIsConfirmingClearPoints(true)}
+                    riders={riders}
+                    constructors={constructors}
+                    participants={participants}
+                    riderPoints={allRiderPoints}
+                    onUpdateRider={handleUpdateRider}
+                    onBulkUpdatePoints={handleBulkUpdatePoints}
+                    addGeminiParticipant={addGeminiParticipant}
+                    onUpdateTeam={onUpdateTeam}
+                    showToast={showToast}
+                    sport={sport}
+                    onCreateRider={handleCreateRider}
+                />
             </Modal>
         </div>
     );

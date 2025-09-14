@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import type { Constructor, Rider, Sport } from '../types';
 import { PlusIcon, ArrowUpIcon, ArrowDownIcon, RemoveIcon } from './Icons';
@@ -41,10 +42,12 @@ export const ConstructorCard: React.FC<ConstructorCardProps> = ({
 
     const constructorRiders = useMemo(() =>
         riders.filter(r => {
-            if (r.constructor_id) return r.constructor_id === constructorItem.id;
-            return r.team === constructorItem.name;
+            const isOfficial = r.is_official;
+            const matchesConstructor = r.constructor_id ? r.constructor_id === constructorItem.id : r.team === constructorItem.name;
+            return isOfficial && matchesConstructor;
         }).map(r => r.name).join(', '),
     [riders, constructorItem]);
+
 
     return (
         <div className={`bg-gray-800 rounded-lg shadow-lg p-4 flex flex-col justify-between transition-all duration-300 ${cardTheme} ${isSelected ? 'ring-2 ring-green-500' : ''}`}>
@@ -60,7 +63,7 @@ export const ConstructorCard: React.FC<ConstructorCardProps> = ({
                     <div>
                         <h3 className="text-xl font-bold text-white group-hover:underline">{constructorItem.name}</h3>
                         <p className="text-sm text-gray-400 truncate" title={constructorRiders}>
-                            {constructorRiders || 'Sin pilotos asignados'}
+                            {constructorRiders || 'Sin pilotos oficiales'}
                         </p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-2">

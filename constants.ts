@@ -1,6 +1,8 @@
 
+
 export const MOTOGP_BUDGET = 1000;
 export const MOTOGP_RIDER_LIMIT = 4;
+export const MOTOGP_GRID_VALUE = 4400;
 
 export const F1_BUDGET = 1000; // Representing 100.0M, as logic in app divides by 10
 export const F1_RIDER_LIMIT = 4;

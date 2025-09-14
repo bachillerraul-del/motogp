@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { Sport, Participant, Race, Rider, TeamSnapshot, AllRiderPoints, Constructor, RiderRoundPoints } from '../types';
+import { MOTOGP_GRID_VALUE } from '../constants';
+import { getTeamForRace } from '../lib/utils';
 
 // FIX: Added 'info' to the toast message types to support informational messages.
 type ToastMessage = { id: number; message: string; type: 'success' | 'error' | 'info' };
@@ -56,10 +58,15 @@ export const useFantasyData = (sport: Sport | null) => {
             setParticipants(participantsData || []);
             setRaces(racesData || []);
             setTeamSnapshots(snapshotsData || []);
-            setRiders(ridersData || []);
+            
+            const processedRiders = (ridersData || []).map(rider => ({
+                ...rider,
+                initial_price: rider.initial_price ?? rider.price,
+            }));
+            setRiders(processedRiders);
             
             const processedConstructors = (constructorsData || []).map(constructor => {
-                const constructorRiders = (ridersData || []).filter(rider => {
+                const constructorRiders = processedRiders.filter(rider => {
                     if (rider.constructor_id) {
                         return rider.constructor_id === constructor.id;
                     }
@@ -84,9 +91,12 @@ export const useFantasyData = (sport: Sport | null) => {
                         initial_price: Math.round(newInitialPrice)
                     };
                 }
-                return constructor;
+                // Add fallback for constructors without associated riders
+                return {
+                    ...constructor,
+                    initial_price: constructor.initial_price ?? constructor.price
+                };
             });
-
             setConstructors(processedConstructors);
             
             const pointsMap: AllRiderPoints = {};
@@ -97,8 +107,8 @@ export const useFantasyData = (sport: Sport | null) => {
                 pointsMap[p.round_id][p.rider_id] = {
                     total: p.points || 0,
                     // Fallback for old data that doesn't have breakdown
-                    main: p.main_race_points ?? p.points ?? 0,
-                    sprint: p.sprint_race_points ?? 0,
+                    main: p.main_points ?? p.points ?? 0,
+                    sprint: p.sprint_points ?? 0,
                 };
             });
             setAllRiderPoints(pointsMap);
@@ -229,6 +239,18 @@ export const useFantasyData = (sport: Sport | null) => {
             await fetchData();
         }
     };
+
+    const handleCreateRider = async (riderData: Omit<Rider, 'id'>): Promise<void> => {
+        const riderTable = sport === 'f1' ? 'f1_rider' : 'rider';
+        const { error } = await supabase.from(riderTable).insert(riderData);
+        if (error) {
+            showToast('Error al crear el piloto.', 'error');
+            console.error(error);
+        } else {
+            showToast('Piloto creado con éxito.', 'success');
+            await fetchData();
+        }
+    };
     
     const handleBulkUpdatePoints = async (
         roundId: number, 
@@ -243,8 +265,8 @@ export const useFantasyData = (sport: Sport | null) => {
             round_id: roundId,
             rider_id,
             points: pointsData.total,
-            main_race_points: pointsData.main,
-            sprint_race_points: pointsData.sprint
+            main_points: pointsData.main,
+            sprint_points: pointsData.sprint
         }));
         
         if (ridersToClear.length > 0) {
@@ -252,13 +274,14 @@ export const useFantasyData = (sport: Sport | null) => {
                 round_id: roundId,
                 rider_id,
                 points: 0,
-                main_race_points: 0,
-                sprint_race_points: 0,
+                main_points: 0,
+                sprint_points: 0,
             })));
         }
 
         if (upsertData.length === 0) {
             showToast('No hay puntos que actualizar.', 'success');
+            await fetchData();
             return;
         }
 
@@ -269,12 +292,87 @@ export const useFantasyData = (sport: Sport | null) => {
             console.error('Bulk point update error:', error);
         } else {
             showToast('Puntos guardados con éxito.', 'success');
+
+            // Price adjustment logic for MotoGP
+            if (sport === 'motogp') {
+                const { data: raceData, error: raceError } = await supabase
+                    .from('races')
+                    .select('prices_adjusted')
+                    .eq('id', roundId)
+                    .single();
+
+                if (raceError) {
+                    console.error('Error fetching race for price adjustment check:', raceError);
+                } else if (raceData && !raceData.prices_adjusted) {
+                    
+                    showToast('Ajustando precios de los pilotos...', 'info');
+
+                    const riderSelectionCounts = new Map<number, number>();
+                    const participantsWithTeamsForRace = participants.filter(p => getTeamForRace(p.id, roundId, teamSnapshots).riderIds.length > 0);
+                    const totalTeams = participantsWithTeamsForRace.length;
+
+                    if (totalTeams > 0) {
+                        participantsWithTeamsForRace.forEach(p => {
+                            const { riderIds } = getTeamForRace(p.id, roundId, teamSnapshots);
+                            riderIds.forEach(id => {
+                                riderSelectionCounts.set(id, (riderSelectionCounts.get(id) || 0) + 1);
+                            });
+                        });
+                    }
+
+                    const officialRiders = riders.filter(r => r.is_official);
+                    const pointsForRound = new Map<number, number>();
+                    officialRiders.forEach(r => {
+                        pointsForRound.set(r.id, newPoints.get(r.id)?.total || 0);
+                    });
+
+                    let totalWeight = 0;
+                    const riderWeights = officialRiders.map(rider => {
+                        const points = pointsForRound.get(rider.id) || 0;
+                        const selectionCount = riderSelectionCounts.get(rider.id) || 0;
+                        const popularityPercentage = totalTeams > 0 ? (selectionCount / totalTeams) * 100 : 0;
+                        
+                        // Weight is a mix of current price, performance (points), and popularity.
+                        const POPULARITY_MULTIPLIER = 0.5;
+                        const weight = rider.price + points + (popularityPercentage * POPULARITY_MULTIPLIER);
+                        
+                        totalWeight += weight;
+                        return { id: rider.id, weight };
+                    });
+
+                    if (totalWeight > 0) {
+                        const riderPriceUpdates = riderWeights.map(({ id, weight }) => {
+                            const newPrice = Math.round((weight / totalWeight) * MOTOGP_GRID_VALUE);
+                            return { id, price: newPrice };
+                        });
+
+                        const finalSum = riderPriceUpdates.reduce((sum, r) => sum + r.price, 0);
+                        const difference = MOTOGP_GRID_VALUE - finalSum;
+                        
+                        if (difference !== 0 && riderPriceUpdates.length > 0) {
+                            riderPriceUpdates.sort((a, b) => b.price - a.price);
+                            riderPriceUpdates[0].price += difference;
+                        }
+
+                        const { error: updateError } = await supabase.from('rider').upsert(riderPriceUpdates);
+                        
+                        if (updateError) {
+                            showToast('Error al actualizar los precios de los pilotos.', 'error');
+                            console.error('Price update error:', updateError);
+                        } else {
+                            await supabase.from('races').update({ prices_adjusted: true }).eq('id', roundId);
+                            showToast('Precios de los pilotos oficiales actualizados.', 'success');
+                        }
+                    }
+                }
+            }
             await fetchData();
         }
     };
 
 
     return {
+        sport,
         participants,
         races,
         teamSnapshots,
@@ -293,6 +391,7 @@ export const useFantasyData = (sport: Sport | null) => {
         handleDeleteParticipant,
         handleUpdateRace,
         handleUpdateRider,
+        handleCreateRider,
         handleBulkUpdatePoints
     };
 };

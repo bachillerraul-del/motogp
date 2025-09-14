@@ -11,6 +11,7 @@ export interface Rider {
     initial_price: number;
     condition?: string | null;
     constructor_id: number;
+    is_official: boolean;
 }
 
 export interface Constructor {
