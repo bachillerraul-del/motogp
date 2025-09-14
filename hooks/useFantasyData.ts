@@ -321,20 +321,18 @@ export const useFantasyData = (sport: Sport | null) => {
                     }
 
                     const officialRiders = riders.filter(r => r.is_official);
-                    const pointsForRound = new Map<number, number>();
-                    officialRiders.forEach(r => {
-                        pointsForRound.set(r.id, newPoints.get(r.id)?.total || 0);
-                    });
-
+                    
                     let totalWeight = 0;
                     const riderWeights = officialRiders.map(rider => {
-                        const points = pointsForRound.get(rider.id) || 0;
+                        const pointsData = newPoints.get(rider.id) || { main: 0, sprint: 0, total: 0 };
                         const selectionCount = riderSelectionCounts.get(rider.id) || 0;
                         const popularityPercentage = totalTeams > 0 ? (selectionCount / totalTeams) * 100 : 0;
                         
-                        // Weight is a mix of current price, performance (points), and popularity.
+                        // Weight is a mix of current price, performance (main + sprint), and popularity.
                         const POPULARITY_MULTIPLIER = 0.5;
-                        const weight = rider.price + points + (popularityPercentage * POPULARITY_MULTIPLIER);
+                        
+                        const performanceWeight = pointsData.total;
+                        const weight = rider.price + performanceWeight + (popularityPercentage * POPULARITY_MULTIPLIER);
                         
                         totalWeight += weight;
                         return { id: rider.id, weight };
